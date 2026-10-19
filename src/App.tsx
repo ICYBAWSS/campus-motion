@@ -24,6 +24,9 @@ const CENTER: [number, number] = [40.5028, -74.447]
 /** ponytail: 50 m/unit is the only scale where all five campuses fit one frame */
 const M_PER_UNIT = 50
 
+/** the projection origin IS the campus centre, so this is the middle of everything */
+const CAMPUS_CENTRE: [number, number] = [0, 0]
+
 /** every entity below is specified in metres and converted here, so the scene is 1:1 with reality */
 const m = (metres: number) => metres / M_PER_UNIT
 const KX = 111320 * Math.cos((CENTER[0] * Math.PI) / 180)
@@ -2159,6 +2162,7 @@ function Scene({
   day,
   minute,
   nowF,
+  target,
   sim,
   clock,
   speed,
@@ -2172,6 +2176,8 @@ function Scene({
   minute: number
   /** sim-relative fractional minutes — for smooth motion */
   nowF: number
+  /** current camera target in scene units */
+  target: [number, number]
   sim: Sim
   /** mutable sim clock, advanced once per frame so motion never waits on React */
   clock: { t: number }
@@ -2190,8 +2196,8 @@ function Scene({
   }, [camera, onCamera])
   const venue = world.event?.venue ?? 'arc'
   /* ponytail: tokens follow the run's queue across stops, capped so the map stays readable */
-  // whoever is within 14 units of the view centre gets a real figure
-  const focus: [number, number] = [-30.6, -46.2]
+  // whoever is nearest the view centre gets a real figure
+  const focus = target
   const near = agents
     .filter((a) => a.state !== 'ride' && Math.hypot(a.x - focus[0], a.z - focus[1]) < m(45))
     .slice(0, 26)
@@ -2314,7 +2320,8 @@ export default function App() {
   const [simMin, setSimMin] = useState(30)
   const [speed, setSpeed] = useState(60)
   /** live orthographic zoom, surfaced as a scale bar so the scale is never in doubt */
-  const [zoomNow, setZoomNow] = useState(120)
+  const [zoomNow, setZoomNow] = useState(7.5)
+  const [camTarget, setCamTarget] = useState<[number, number]>(CAMPUS_CENTRE)
   const controls = useRef<any>(null)
   const [running, setRunning] = useState(true)
   const [date, setDate] = useState<string>(saved?.date ?? '2026-10-19')
@@ -2524,7 +2531,7 @@ export default function App() {
       <Canvas
         orthographic
         dpr={1}
-        camera={{ position: [40, 36, 40], zoom: 120, near: -600, far: 900 }}
+        camera={{ position: [40, 36, 40], zoom: 7.5, near: -600, far: 900 }}
         gl={{ antialias: true }}
         className="absolute inset-0"
       >
@@ -2535,6 +2542,7 @@ export default function App() {
           day={day}
           minute={minute}
           nowF={simMin}
+          target={camTarget}
           sim={sim}
           clock={clock}
           speed={speed}
@@ -2542,7 +2550,7 @@ export default function App() {
         />
         <OrbitControls
           makeDefault
-          target={[-30.6, 0, -46.2]}
+          target={[CAMPUS_CENTRE[0], 0, CAMPUS_CENTRE[1]]}
           enableRotate={false}
           enablePan
           screenSpacePanning
@@ -2551,11 +2559,14 @@ export default function App() {
           mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
           ref={controls}
           onChange={() => {
-            const z = controls.current?.object?.zoom
+            const c = controls.current
+            const z = c?.object?.zoom
             if (z && Math.abs(z - zoomNow) > 0.5) setZoomNow(z)
+            const t = c?.target
+            if (t && Math.hypot(t.x - camTarget[0], t.z - camTarget[1]) > 1) setCamTarget([t.x, t.z])
           }}
           zoomSpeed={2}
-          minZoom={6}
+          minZoom={5}
           maxZoom={1400}
         />
       </Canvas>
