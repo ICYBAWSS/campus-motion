@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Html, Line, OrbitControls } from '@react-three/drei'
+import { Html, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { FRAME, groundTexture } from './ground'
+import { FRAME } from './ground'
+import satelliteUrl from './data/satellite.jpg'
 import { ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
 import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
@@ -130,9 +131,50 @@ function Buildings({ data }: { data: B[] }) {
   )
 }
 
-/** grass, asphalt and concrete, all from the routing graph so nothing floats */
+/** satellite imagery with the bus routes painted into the same canvas, so the
+ *  lines are registered to the real ground by construction */
 function Ground() {
-  const tex = useMemo(() => groundTexture(), [])
+  const tex = useMemo(() => {
+    const W = 3200
+    const H = Math.round((W * (FRAME.z1 - FRAME.z0)) / (FRAME.x1 - FRAME.x0))
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#93cf7c'
+    ctx.fillRect(0, 0, W, H)
+
+    const px = (x: number) => ((x - FRAME.x0) / (FRAME.x1 - FRAME.x0)) * W
+    const py = (z: number) => ((z - FRAME.z0) / (FRAME.z1 - FRAME.z0)) * H
+
+    const paintRoutes = () => {
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      const W_ROUTE = W * 0.0022
+      for (const pass of [0, 1]) {
+        for (const r of ROUTES) {
+          ctx.strokeStyle = pass === 0 ? 'rgba(0,0,0,0.55)' : r.colour
+          ctx.lineWidth = pass === 0 ? W_ROUTE + 4 : W_ROUTE
+          ctx.beginPath()
+          ctx.moveTo(px(r.path[0][0]), py(r.path[0][1]))
+          for (let i = 1; i < r.path.length; i++) ctx.lineTo(px(r.path[i][0]), py(r.path[i][1]))
+          ctx.stroke()
+        }
+      }
+    }
+
+    const t = new THREE.CanvasTexture(canvas)
+    t.colorSpace = THREE.SRGBColorSpace
+    t.anisotropy = 8
+    const img = new Image()
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, W, H)
+      paintRoutes()
+      t.needsUpdate = true
+    }
+    img.src = satelliteUrl
+    return t
+  }, [])
   const w = FRAME.x1 - FRAME.x0
   const h = FRAME.z1 - FRAME.z0
   return (
@@ -327,23 +369,6 @@ function People({ agents, clock }: { agents: Agent[]; clock: { t: number } }) {
   )
 }
 
-function RouteLines() {
-  return (
-    <>
-      {ROUTES.map((r) => (
-        <Line
-          key={r.ref}
-          points={r.path.map(([x, z]) => [x, 0.05, z])}
-          color={r.colour}
-          lineWidth={1.6}
-          transparent
-          opacity={0.55}
-        />
-      ))}
-    </>
-  )
-}
-
 const MAJOR = new Set(['arc', 'bsc', 'livSc', 'cas', 'yard', 'redoak', 'hill', 'quads'])
 
 function Stops() {
@@ -388,12 +413,12 @@ export function Scene({
     onCamera?.(camera)
   }, [camera, onCamera])
 
-  // map view: straight down, north up. OrbitControls keeps pan and zoom but never
-  // tilts, so the scene reads as a plan rather than an oblique 3D shot.
+  // isometric view: 45° azimuth, ~45° elevation, north up. OrbitControls keeps pan
+  // and zoom but never tilts, so the angle stays fixed.
   useEffect(() => {
     const t = STOPS[focus].at
-    camera.up.set(0, 0, -1)
-    camera.position.set(t[0], 300, t[1])
+    camera.up.set(0, 1, 0)
+    camera.position.set(t[0] + 140, 200, t[1] + 140)
     camera.lookAt(t[0], 0, t[1])
     ;(camera as THREE.OrthographicCamera).updateProjectionMatrix()
   }, [camera, focus])
@@ -411,7 +436,6 @@ export function Scene({
       <ambientLight intensity={0.5} />
       <directionalLight position={[60, 90, 50]} intensity={2.0} color="#fff6e5" />
       <Ground />
-      <RouteLines />
       <Stops />
       <Buildings data={campus} />
       {sim.buses.map((b, i) => (

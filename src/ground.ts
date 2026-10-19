@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three'
 import NET from './network.json'
+import { ROUTES } from './sim'
 
 export const FRAME = { x0: -70, x1: 70, z0: -110, z1: 110 }
 const PX = 2560 // texture pixels across the frame
@@ -51,14 +52,19 @@ export function groundTexture(): THREE.Texture {
   if (cached) return cached
 
   const canvas = document.createElement('canvas')
+  const frameW = FRAME.x1 - FRAME.x0
+  const frameH = FRAME.z1 - FRAME.z0
+  // the plane is frameW x frameH; a square canvas stretched onto it shears every
+  // road by frameH/frameW, which is why painted roads never matched the extruded
+  // building footprints
   canvas.width = PX
-  canvas.height = PX
+  canvas.height = Math.round(PX * (frameH / frameW))
   const ctx = canvas.getContext('2d')!
-  const scale = PX / (FRAME.x1 - FRAME.x0)
+  const scale = PX / frameW
   const toPx = (x: number, z: number): [number, number] => [(x - FRAME.x0) * scale, (z - FRAME.z0) * scale]
 
   ctx.fillStyle = '#93cf7c'
-  ctx.fillRect(0, 0, PX, PX)
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const edges = (
     NET as unknown as { edges: { a: number[]; b: number[]; drive: boolean; walk: boolean; kind: string }[] }
@@ -67,7 +73,7 @@ export function groundTexture(): THREE.Texture {
   // footways first, then asphalt over them
   const passes: [boolean, boolean][] = [
     [true, false],
-    [false, false],
+    [false, true],
   ]
   ctx.lineCap = 'round'
   for (const [walkOnly, driveOnly] of passes) {
@@ -88,6 +94,26 @@ export function groundTexture(): THREE.Texture {
       ctx.lineTo(x2, z2)
       ctx.stroke()
     }
+  }
+
+  // bus routes on top of the carriageway: dark casing, then the route colour.
+  // no lateral offset — the ribbon has to sit on the road it follows
+  const ROUTE_PX = 7
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  for (const pass of [0, 1]) {
+    ROUTES.forEach((r) => {
+      ctx.strokeStyle = pass === 0 ? 'rgba(0,0,0,0.55)' : r.colour
+      ctx.lineWidth = pass === 0 ? ROUTE_PX + 3 : ROUTE_PX
+      ctx.beginPath()
+      const [sx, sz] = toPx(r.path[0][0], r.path[0][1])
+      ctx.moveTo(sx, sz)
+      for (let k = 1; k < r.path.length; k++) {
+        const [x, z] = toPx(r.path[k][0], r.path[k][1])
+        ctx.lineTo(x, z)
+      }
+      ctx.stroke()
+    })
   }
 
   const tex = new THREE.CanvasTexture(canvas)
