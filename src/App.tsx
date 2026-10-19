@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows, Html, Line, OrbitControls } from '@react-three/drei'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
+import roads from './roads.json'
 import type { Group as ThreeGroup } from 'three'
 import {
   agentAt,
@@ -1851,29 +1852,23 @@ const NODES: { name: string; key: StopKey }[] = [
 /* ------------------------------------------------------------------ */
 
 /** ponytail: ~20x oversized so people read at 50 m/unit; zoom to maxZoom 40 for figures */
-function Person({ shirt, skin }: { shirt: string; skin: string }) {
-  const legL = useRef<ThreeGroup>(null)
-  const legR = useRef<ThreeGroup>(null)
-  const armL = useRef<ThreeGroup>(null)
-  const armR = useRef<ThreeGroup>(null)
+/** layover stops: student centres, and Red Oak Lane for Cook/Douglass */
+const BREAK_STOPS: StopKey[] = ['bsc', 'livSc', 'cas', 'redoak']
 
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime * 5
-    if (legL.current) legL.current.rotation.x = Math.sin(t) * 0.55
-    if (legR.current) legR.current.rotation.x = -Math.sin(t) * 0.55
-    if (armL.current) armL.current.rotation.x = -Math.sin(t) * 0.45
-    if (armR.current) armR.current.rotation.x = Math.sin(t) * 0.45
-  })
+const SHIRTS = ['#ee0000', '#1e3a8a', '#0f766e', '#f59e0b', '#7c3aed', '#0891b2', '#c2410c', '#4d7c0f']
+const SKINS = ['#f2d3b3', '#d9a066', '#b57a4a', '#8a5a34', '#efc9a4', '#c98d63']
 
+/** one figure. Static stance, animated by whatever group carries it — 120 of these must not each own a frame callback. */
+function Person({ shirt, skin, scale = 0.5 }: { shirt: string; skin: string; scale?: number }) {
   return (
-    <group scale={0.6}>
-      <group ref={legL} position={[-0.075, 0.3, 0]}>
+    <group scale={scale}>
+      <group position={[-0.075, 0.3, 0]} rotation-x={0.26}>
         <mesh>
           <capsuleGeometry args={[0.055, 0.24, 3, 6]} />
           <meshStandardMaterial color="#334155" roughness={0.9} />
         </mesh>
       </group>
-      <group ref={legR} position={[0.075, 0.3, 0]}>
+      <group position={[0.075, 0.3, 0]} rotation-x={-0.26}>
         <mesh>
           <capsuleGeometry args={[0.055, 0.24, 3, 6]} />
           <meshStandardMaterial color="#334155" roughness={0.9} />
@@ -1887,26 +1882,17 @@ function Person({ shirt, skin }: { shirt: string; skin: string }) {
         <sphereGeometry args={[0.105, 12, 12]} />
         <meshStandardMaterial color={skin} roughness={0.7} />
       </mesh>
-      <group ref={armL} position={[-0.17, 0.68, 0]}>
-        <mesh>
-          <capsuleGeometry args={[0.042, 0.22, 3, 6]} />
-          <meshStandardMaterial color={shirt} roughness={0.75} />
-        </mesh>
-      </group>
-      <group ref={armR} position={[0.17, 0.68, 0]}>
-        <mesh>
-          <capsuleGeometry args={[0.042, 0.22, 3, 6]} />
-          <meshStandardMaterial color={shirt} roughness={0.75} />
-        </mesh>
-      </group>
+      <mesh position={[-0.19, 0.64, 0]} rotation-z={0.18}>
+        <capsuleGeometry args={[0.04, 0.2, 3, 6]} />
+        <meshStandardMaterial color={shirt} roughness={0.8} />
+      </mesh>
+      <mesh position={[0.19, 0.64, 0]} rotation-z={-0.18}>
+        <capsuleGeometry args={[0.04, 0.2, 3, 6]} />
+        <meshStandardMaterial color={shirt} roughness={0.8} />
+      </mesh>
     </group>
   )
 }
-
-/** drivers take breaks only where there is a layover: the student centres, and Red Oak Lane for Cook/Douglass */
-const BREAK_STOPS: StopKey[] = ['bsc', 'livSc', 'cas', 'redoak']
-const SHIRTS = ['#ee0000', '#1e3a8a', '#0f766e', '#f59e0b', '#7c3aed', '#0891b2']
-const SKINS = ['#f2c9a0', '#d9a066', '#a9714b', '#7a4a2b', '#f7d9c4']
 
 function Bus({
   route,
@@ -1958,11 +1944,13 @@ function Bus({
 function RouteLine({ route, active }: { route: (typeof ROUTES)[number]; active: boolean }) {
   return (
     <Line
-      points={route.path.map(([x, z]) => [x, 0.05, z])}
+      points={route.path.map(([x, z]) => [x, 0.9, z])}
       color={route.colour}
-      lineWidth={active ? 3 : 1.4}
+      lineWidth={active ? 2.4 : 1.2}
       transparent
-      opacity={active ? 0.95 : 0.18}
+      opacity={active ? 0.9 : 0.14}
+      depthTest={false}
+      renderOrder={3}
     />
   )
 }
@@ -2034,6 +2022,88 @@ function PlaceMass({ place }: { place: Place }) {
   )
 }
 
+/**
+ * The real street network, from OSM, as one triangle mesh: 11k segments would be 11k draw calls as
+ * lines, so each segment becomes a quad in a single vertex-coloured buffer. Widths are exaggerated
+ * the same way everything else at 1:50 is.
+ */
+const ROAD_WIDTH: Record<string, number> = {
+  motorway: 0.9,
+  trunk: 0.9,
+  primary: 0.8,
+  secondary: 0.6,
+  tertiary: 0.5,
+  residential: 0.34,
+  unclassified: 0.34,
+  living_street: 0.3,
+  service: 0.2,
+}
+
+const ROAD_COLOUR: Record<string, number[]> = {
+  motorway: [0.42, 0.44, 0.47],
+  trunk: [0.42, 0.44, 0.47],
+  primary: [0.47, 0.49, 0.52],
+  secondary: [0.53, 0.55, 0.58],
+  tertiary: [0.58, 0.6, 0.62],
+  residential: [0.64, 0.65, 0.67],
+  unclassified: [0.64, 0.65, 0.67],
+  living_street: [0.66, 0.67, 0.69],
+  service: [0.7, 0.71, 0.72],
+}
+
+function Roads() {
+  const geom = useMemo(() => {
+    const pos: number[] = []
+    const col: number[] = []
+    for (const way of roads as { c: string; p: number[][] }[]) {
+      const w = (ROAD_WIDTH[way.c] ?? 0.3) / 2
+      const c = ROAD_COLOUR[way.c] ?? [0.65, 0.66, 0.68]
+      for (let i = 0; i < way.p.length - 1; i++) {
+        const [x1, z1] = way.p[i]
+        const [x2, z2] = way.p[i + 1]
+        const dx = x2 - x1
+        const dz = z2 - z1
+        const len = Math.hypot(dx, dz) || 1
+        const nx = (-dz / len) * w
+        const nz = (dx / len) * w
+        // two triangles per segment
+        pos.push(
+          x1 + nx,
+          0,
+          z1 + nz,
+          x1 - nx,
+          0,
+          z1 - nz,
+          x2 + nx,
+          0,
+          z2 + nz,
+          x2 + nx,
+          0,
+          z2 + nz,
+          x1 - nx,
+          0,
+          z1 - nz,
+          x2 - nx,
+          0,
+          z2 - nz,
+        )
+        for (let k = 0; k < 6; k++) col.push(c[0], c[1], c[2])
+      }
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+    g.computeVertexNormals()
+    return g
+  }, [])
+
+  return (
+    <mesh geometry={geom} position={[0, 0.06, 0]}>
+      <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
+    </mesh>
+  )
+}
+
 /** every building and parking lot in one instanced draw call */
 function Buildings({ data }: { data: CampusBuilding[] }) {
   const ref = useRef<THREE.InstancedMesh>(null)
@@ -2092,6 +2162,9 @@ function Scene({
   day,
   minute,
   nowMin,
+  nowF,
+  personScale,
+  setPersonScale,
 }: {
   world: World
   run: SimRun
@@ -2099,16 +2172,44 @@ function Scene({
   day: Day
   /** absolute minutes since midnight — for the service calendar */
   minute: number
-  /** sim-relative minutes — for the run */
+  /** sim-relative whole minutes — for lookups into the run */
   nowMin: number
+  /** sim-relative fractional minutes — for smooth motion */
+  nowF: number
+  /** figures grow as you zoom in, so a person is never an ant nor a monolith */
+  personScale: number
+  setPersonScale: (n: number) => void
 }) {
+  const { camera } = useThree()
+  const lastZoom = useRef(0)
+  const onZoom = (zoom: number) => setPersonScale(THREE.MathUtils.clamp(zoom * 0.013, 0.16, 1.6))
+
+  useFrame(() => {
+    const z = Math.round((camera as THREE.OrthographicCamera).zoom || 1)
+    if (z !== lastZoom.current) {
+      lastZoom.current = z
+      onZoom(z)
+    }
+  })
+
   const venue = world.event?.venue ?? 'arc'
   /* ponytail: tokens follow the run's queue across stops, capped so the map stays readable */
-  const tokenPlan = (Object.keys(STOPS) as StopKey[])
-    .map((k) => ({ k, n: Math.min(8, Math.round(at(run, k, nowMin) / 25)) }))
-    .filter((t) => t.n > 0)
-    .sort((a, b) => b.n - a.n)
-    .slice(0, 6)
+  const tokenPlan = (() => {
+    // a token every ~5 people, biggest queues first, hard cap so the map stays interactive
+    const all = (Object.keys(STOPS) as StopKey[])
+      .map((k) => ({ k, n: Math.min(18, Math.round(at(run, k, nowMin) / 5)) }))
+      .filter((t) => t.n > 0)
+      .sort((a, b) => b.n - a.n)
+    const out: { k: StopKey; n: number }[] = []
+    let budget = 70
+    for (const t of all) {
+      if (budget <= 0) break
+      const n = Math.min(t.n, budget)
+      out.push({ k: t.k, n })
+      budget -= n
+    }
+    return out
+  })()
 
   return (
     <>
@@ -2122,10 +2223,9 @@ function Scene({
         <meshStandardMaterial color="#8ecf72" roughness={1} />
       </mesh>
 
+      <Roads />
       <Buildings data={CAMPUS.buildings} />
       <LandmarkLabels data={CAMPUS.buildings} />
-
-      <ContactShadows position={[0, 0.02, 0]} opacity={0.22} scale={260} blur={3} far={20} color="#2f4a25" />
 
       {ROUTES.map((route) => (
         <RouteLine key={route.ref} route={route} active={routeState(route, day, minute) !== null} />
@@ -2148,7 +2248,7 @@ function Scene({
       {run.buses.map((b, i) => {
         const route = ROUTES.find((r) => r.ref === b.ref)
         if (!route) return null
-        return <Bus key={`${b.ref}-${i}`} route={route} track={b.track} minute={nowMin} />
+        return <Bus key={`${b.ref}-${i}`} route={route} track={b.track} minute={nowF} />
       })}
 
       {tokenPlan.flatMap(({ k, n }) =>
@@ -2156,8 +2256,15 @@ function Scene({
           const [x, z] = STOPS[k].at
           const a = (i / n) * Math.PI * 2
           return (
-            <group key={`${k}-${i}`} position={[x + Math.cos(a) * 1.6, 0.02, z + Math.sin(a) * 1.6]}>
-              <Person shirt={SHIRTS[i % SHIRTS.length]} skin={SKINS[i % SKINS.length]} />
+            <group
+              key={`${k}-${i}`}
+              position={[
+                x + Math.cos(a + nowF * 1.2 + i) * (0.45 + (i % 3) * 0.22),
+                0.02,
+                z + Math.sin(a + nowF * 1.2 + i) * (0.45 + (i % 3) * 0.22),
+              ]}
+            >
+              <Person shirt={SHIRTS[i % SHIRTS.length]} skin={SKINS[i % SKINS.length]} scale={personScale} />
             </group>
           )
         }),
@@ -2165,7 +2272,7 @@ function Scene({
 
       {/* forty people with somewhere to be: walk, wait, ride, walk, class, home */}
       {agents.map((a) => {
-        const st = agentAt(a, nowMin)
+        const st = agentAt(a, nowF)
         if (st.mode === 'home' || st.mode === 'class' || st.mode === 'ride') return null
         const [x1, z1] = STOPS[st.from as StopKey].at
         const [x2, z2] = STOPS[st.to as StopKey].at
@@ -2180,7 +2287,11 @@ function Scene({
               z1 + (z2 - z1) * f + Math.sin(a.id * 2.4) * wobble,
             ]}
           >
-            <Person shirt={SHIRTS[a.id % SHIRTS.length]} skin={SKINS[a.id % SKINS.length]} />
+            <Person
+              shirt={SHIRTS[a.id % SHIRTS.length]}
+              skin={SKINS[a.id % SKINS.length]}
+              scale={personScale}
+            />
           </group>
         )
       })}
@@ -2237,6 +2348,10 @@ export default function App() {
   const [scenario, setScenario] = useState<Scenario>(saved?.scenario ?? SCENARIO_0)
   const [active, setActive] = useState<string[]>(saved?.active ?? [])
   const [baseline, setBaseline] = useState<World | null>(null)
+  const [eventOn, setEventOn] = useState(true)
+  const [closedStops, setClosedStops] = useState<StopKey[]>([])
+  const [serviceAdj, setServiceAdj] = useState<Record<string, number>>({})
+  const [personScale, setPersonScale] = useState(0.55)
   const [dayNoise, setDayNoise] = useState(1) // 0 = means only, 1 = a real day
   const [observed, setObserved] = useState('')
   const [seed, setSeed] = useState(7)
@@ -2274,10 +2389,15 @@ export default function App() {
   /** prompt-built presets do not survive a reload; only count the ones that still exist */
   const applied = useMemo(() => library.filter((p) => active.includes(p.id)), [library, active])
 
-  const world = useMemo<World>(
-    () => applied.reduce<World>((w, p) => p.apply(w), { ...BASE_WORLD, event: scenario, date, cal }),
-    [applied, scenario, date, cal],
-  )
+  const world = useMemo<World>(() => {
+    const base = applied.reduce<World>((w, p) => p.apply(w), { ...BASE_WORLD, event: scenario, date, cal })
+    return {
+      ...base,
+      event: eventOn ? scenario : null,
+      closed: [...base.closed, ...closedStops],
+      serviceScale: { ...base.serviceScale, ...serviceAdj },
+    }
+  }, [applied, scenario, date, cal, eventOn, closedStops, serviceAdj])
 
   const venueKey = world.event?.venue ?? scenario.venue
   const venue = STOPS[venueKey]
@@ -2326,7 +2446,7 @@ export default function App() {
   }
 
   const run = useMemo(() => makeRun(world, reserves), [world, reserves, venueKey, dayNoise, seed]) // eslint-disable-line react-hooks/exhaustive-deps
-  const agents = useMemo(() => buildAgents(run, WALK_MIN, 40), [run])
+  const agents = useMemo(() => buildAgents(run, WALK_MIN, 120), [run])
   // dev-only: the run is the model, so make it inspectable from the console
   if (import.meta.env.DEV) (window as any).__sim = { run, agents, world }
 
@@ -2347,10 +2467,24 @@ export default function App() {
   const activeCount = states.filter((s) => s.headway !== null).length
 
   const nodes = NODES.map((n) => ({
+    key: n.key,
     name: n.name,
     band: '5G UWB',
     density: world.closed.includes(n.key) ? 0 : stopDensity(run, n.key, nowMin),
   }))
+
+  const toggleStop = (k: StopKey) =>
+    setClosedStops((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]))
+
+  /** +1 bus on a route is a shorter headway; the route list shows the result */
+  const bumpRoute = (ref: string, dir: 1 | -1) =>
+    setServiceAdj((prev) => {
+      const route = ROUTES.find((r) => r.ref === ref)
+      const baseHw = (route && routeState(route, bandOf(date), minute)) || 10
+      const cur = baseHw * (prev[ref] ?? 1)
+      const target = Math.min(baseHw * 3, Math.max(2, cur - dir * 1.5))
+      return { ...prev, [ref]: target / baseHw }
+    })
 
   const applyCalibration = () => {
     const obs = Number(observed)
@@ -2361,18 +2495,6 @@ export default function App() {
     setObserved('')
   }
 
-  const toggle = (id: string) => {
-    const preset = library.find((p) => p.id === id)
-    const turningOn = preset !== undefined && !active.includes(id)
-    setActive((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-    // keep the sliders in sync when a preset also moves the event
-    if (turningOn && preset) {
-      const next = preset.apply({ ...BASE_WORLD, event: scenario })
-      if (next.event !== scenario) setScenario(next.event ?? scenario)
-    }
-  }
-
-  /** the only call site for parseCommand — make it async when it becomes an LLM call */
   const applyPrompt = () => {
     const cmd = parseCommand(prompt, simMin)
     const stamp = Date.now().toString(36)
@@ -2439,13 +2561,34 @@ export default function App() {
     <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-b from-[#bfe0f5] to-[#e9f6ff] text-slate-800">
       <Canvas
         orthographic
-        dpr={[1, 2]}
-        camera={{ position: [40, 36, 40], zoom: 8.5, near: -600, far: 900 }}
+        dpr={1}
+        camera={{ position: [40, 36, 40], zoom: 70, near: -600, far: 900 }}
         gl={{ antialias: true }}
         className="absolute inset-0"
       >
-        <Scene world={world} run={run} agents={agents} day={day} minute={minute} nowMin={nowMin} />
-        <OrbitControls enableRotate={false} enableDamping dampingFactor={0.08} minZoom={8} maxZoom={40} />
+        <Scene
+          world={world}
+          run={run}
+          agents={agents}
+          day={day}
+          minute={minute}
+          nowMin={nowMin}
+          nowF={simMin}
+          personScale={personScale}
+          setPersonScale={setPersonScale}
+        />
+        <OrbitControls
+          makeDefault
+          target={[-30.6, 0, -46.2]}
+          enableRotate={false}
+          enablePan
+          screenSpacePanning
+          enableDamping
+          dampingFactor={0.12}
+          mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
+          minZoom={4}
+          maxZoom={90}
+        />
       </Canvas>
 
       <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-4 border-b border-white/60 bg-white/70 px-6 py-3 backdrop-blur-xl">
@@ -2459,6 +2602,7 @@ export default function App() {
               <span className="rounded-full bg-[#ee0000] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-white">
                 sim
               </span>
+              <span className="text-[9px] text-slate-400">roads {roads.length}</span>
             </div>
             <p className="text-[11px] text-slate-500">
               Powered by Verizon Mobile Edge Compute · simulated telemetry
@@ -2511,43 +2655,24 @@ export default function App() {
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Scenario</h2>
             <span className="rounded-full bg-[#ee0000]/10 px-2 py-0.5 text-[10px] font-semibold text-[#c40000]">
-              {applied.length} interventions
+              live
             </span>
           </div>
 
-          <select
-            value=""
-            onChange={(e) => e.target.value && toggle(e.target.value)}
-            className="mt-3 w-full rounded-lg border border-slate-200 bg-white/80 px-2 py-1.5 text-[11px] text-slate-700 outline-none focus:border-[#ee0000]"
-          >
-            <option value="">Load a scenario…</option>
-            {library.map((p) => (
-              <option key={p.id} value={p.id}>
-                {active.includes(p.id) ? '✓ ' : ''}
-                {p.label}
-              </option>
-            ))}
-          </select>
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Event</span>
+            <button
+              onClick={() => setEventOn((v) => !v)}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition ${
+                eventOn ? 'bg-[#ee0000] text-white' : 'bg-slate-900/[0.07] text-slate-500'
+              }`}
+            >
+              {eventOn ? 'on' : 'off'}
+            </button>
+          </div>
 
-          <ul className="mt-2 space-y-1">
-            {library
-              .filter((p) => active.includes(p.id))
-              .map((p) => (
-                <li key={p.id} className="flex items-center gap-2 rounded-lg bg-slate-900/[0.03] px-2 py-1">
-                  <span className="flex-1 truncate text-[10px] text-slate-600">{p.label}</span>
-                  <button
-                    onClick={() => toggle(p.id)}
-                    className="shrink-0 rounded px-1 text-[11px] font-bold text-slate-400 hover:text-[#ee0000]"
-                    aria-label={`Remove ${p.label}`}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-          </ul>
-
-          <label className="mt-3 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            Event venue
+          <label className="mt-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Venue
           </label>
           <select
             value={scenario.venue}
@@ -2661,10 +2786,26 @@ export default function App() {
                     {route.stops.length} stops
                   </span>
                   <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-500">
-                    {headway === null
-                      ? 'not running'
-                      : `${FLEET_OBSERVED[route.ref] ?? fleetFor(route, headway, scale)} buses · ${Math.round(headway * scale)} min`}
+                    {headway === null ? 'not running' : `${Math.round(headway * scale)} min`}
                   </span>
+                  {headway !== null && (
+                    <span className="flex shrink-0 gap-0.5">
+                      <button
+                        onClick={() => bumpRoute(route.ref, 1)}
+                        title="More buses on this route"
+                        className="h-4 w-4 rounded bg-slate-900/[0.06] text-[10px] font-bold leading-none text-slate-600 hover:bg-[#ee0000]/15 hover:text-[#ee0000]"
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={() => bumpRoute(route.ref, -1)}
+                        title="Fewer buses on this route"
+                        className="h-4 w-4 rounded bg-slate-900/[0.06] text-[10px] font-bold leading-none text-slate-600 hover:bg-[#ee0000]/15 hover:text-[#ee0000]"
+                      >
+                        −
+                      </button>
+                    </span>
+                  )}
                 </li>
               )
             })}
@@ -2680,24 +2821,38 @@ export default function App() {
           </div>
           <ul className="mt-2 space-y-1">
             {nodes.map((n) => (
-              <li key={n.name} className="rounded-lg px-2 py-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[11px] font-medium text-slate-700">{n.name}</span>
-                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-900">
-                    {n.density}%
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
-                    <div
-                      className={`h-full rounded-full ${densityBar(n.density)}`}
-                      style={{ width: `${n.density}%` }}
-                    />
+              <li key={n.key}>
+                <button
+                  onClick={() => toggleStop(n.key)}
+                  title="Close or reopen this stop"
+                  className={`w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-slate-900/[0.04] ${
+                    closedStops.includes(n.key) ? 'bg-red-50/70' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`truncate text-[11px] font-medium ${
+                        closedStops.includes(n.key) ? 'text-red-700 line-through' : 'text-slate-700'
+                      }`}
+                    >
+                      {n.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-900">
+                      {n.density}%
+                    </span>
                   </div>
-                  <span className="w-16 shrink-0 text-right text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                    {n.band}
-                  </span>
-                </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className={`h-full rounded-full ${densityBar(n.density)}`}
+                        style={{ width: `${n.density}%` }}
+                      />
+                    </div>
+                    <span className="w-14 shrink-0 text-right text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                      {closedStops.includes(n.key) ? 'closed' : n.band}
+                    </span>
+                  </div>
+                </button>
               </li>
             ))}
           </ul>

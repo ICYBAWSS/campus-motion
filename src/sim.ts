@@ -306,8 +306,11 @@ export type Agent = {
 
 export function buildAgents(run: SimRun, walkMin: Record<StopId, number>, count = 40): Agent[] {
   const out: Agent[] = []
-  for (const trip of run.trips) {
-    if (out.length >= count) break
+  // spread the sample across the whole day — the first N trips are all at 5am, which is why
+  // nobody was ever on screen at a normal hour
+  const stride = Math.max(1, Math.floor(run.trips.length / count))
+  for (let i = 0; i < run.trips.length && out.length < count; i += stride) {
+    const trip = run.trips[i]
     if (trip.alight - trip.board < 1) continue // not worth animating
     const classEnd = trip.alight + 75
     const back = run.trips.find((r) => r.origin === trip.dest && r.dest === trip.origin && r.board > classEnd)
