@@ -96,6 +96,36 @@ for (let step = 0; step < 120; step++) {
 }
 console.log(`wrap ok — ${wraps} loop wraps, none teleported`)
 
+/* a bus that hits a stop and drives back the way it came: compare the heading of
+   consecutive moving steps. Terminus turnarounds are real, so allow a small share. */
+{
+  const prev = new Map()
+  let steps = 0
+  let reversals = 0
+  for (let step = 0; step < 180; step++) {
+    sim.runTo(600 + step + 1)
+    for (const b of sim.buses) {
+      const p = atDistance(b, b.d)
+      const was = prev.get(b)
+      if (was) {
+        const vx = p[0] - was.p[0]
+        const vz = p[1] - was.p[1]
+        const len = Math.hypot(vx, vz)
+        if (len > 0.5 && was.v) {
+          steps++
+          const dot = (vx * was.v[0] + vz * was.v[1]) / (len * Math.hypot(was.v[0], was.v[1]))
+          if (dot < -0.7) reversals++
+        }
+        if (len > 0.5) prev.set(b, { p, v: [vx, vz] })
+        else prev.set(b, { p, v: was.v })
+      } else prev.set(b, { p, v: null })
+    }
+  }
+  const pct = (100 * reversals) / Math.max(1, steps)
+  console.log(`heading ok — ${reversals} reversals in ${steps} moving steps (${pct.toFixed(1)}%)`)
+  assert.ok(pct < 6, `${pct.toFixed(1)}% of bus steps reverse direction`)
+}
+
 assert.ok(moved > 0, 'buses actually move')
 assert.ok(offRoute === 0, `${offRoute} samples left the route (worst ${worst.toFixed(1)} m)`)
 console.log(`bus ok — ${moved} moving samples, ${dwelling} dwelling, worst ${worst.toFixed(1)} m off route`)

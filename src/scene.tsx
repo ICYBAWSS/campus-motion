@@ -145,7 +145,8 @@ function Ground() {
 
 function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
   const g = useRef<THREE.Group>(null)
-  useFrame(() => {
+  const yaw = useRef(0)
+  useFrame((_, dt) => {
     const node = g.current
     if (!node) return
     const f = clock.t - Math.floor(clock.t)
@@ -159,7 +160,15 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
     const p1 = atDistance(bus, dNow + 1.5)
     const dx = p1[0] - p0[0]
     const dz = p1[1] - p0[1]
-    if (dx || dz) node.rotation.y = Math.atan2(-dz, dx)
+    if (dx || dz) {
+      // turn toward the path, never snap: a terminus U-turn should read as a bus
+      // swinging round, not as one that teleports into reverse
+      const target = Math.atan2(-dz, dx)
+      let delta = target - yaw.current
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta))
+      yaw.current += delta * Math.min(1, dt * 4)
+      node.rotation.y = yaw.current
+    }
   })
   const load = bus.riders.length / bus.capacity
   return (

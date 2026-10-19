@@ -50,7 +50,7 @@ function snap(p) {
   return best
 }
 
-function astar(start, goal) {
+function astar(start, goal, used) {
   if (start === goal) return [nodes.get(goal)]
   const gx = nodes.get(goal)[0]
   const gz = nodes.get(goal)[1]
@@ -62,7 +62,10 @@ function astar(start, goal) {
     const cur = open.shift()[1]
     if (cur === goal) break
     for (const e of adj.get(cur) ?? []) {
-      const ng = dist.get(cur) + e.cost
+      // driving back down the street we just came up is what looks like a bus
+      // going into reverse; make it cost four times as much
+      const reuse = used.has(cur < e.to ? `${cur}|${e.to}` : `${e.to}|${cur}`) ? 4 : 1
+      const ng = dist.get(cur) + e.cost * reuse
       if (ng < (dist.get(e.to) ?? Infinity)) {
         dist.set(e.to, ng)
         came.set(e.to, cur)
@@ -85,16 +88,23 @@ const out = {}
 for (const r of routes) {
   const nodesFor = r.stops.map((s) => snap(stops[s].at))
   const path = []
+  const used = new Set()
   let missed = 0
   for (let i = 0; i < nodesFor.length; i++) {
-    const leg = astar(nodesFor[i], nodesFor[(i + 1) % nodesFor.length])
+    const leg = astar(nodesFor[i], nodesFor[(i + 1) % nodesFor.length], used)
     if (!leg) {
       missed++
       continue
     }
-    for (const p of leg) {
+    for (let k = 0; k < leg.length; k++) {
+      const p = leg[k]
       const last = path[path.length - 1]
       if (!last || last[0] !== p[0] || last[1] !== p[1]) path.push(p)
+      if (k > 0) {
+        const a = key(leg[k - 1])
+        const b = key(p)
+        used.add(a < b ? `${a}|${b}` : `${b}|${a}`)
+      }
     }
   }
   assert.ok(path.length > 10, `route ${r.ref} produced ${path.length} points`)
