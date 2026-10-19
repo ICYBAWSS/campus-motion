@@ -4,14 +4,7 @@ import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import roads from './roads.json'
 import type { Group as ThreeGroup } from 'three'
-import {
-  agentAt,
-  buildAgents,
-  runFleet,
-  type Agent,
-  type RouteSpec as SimRouteSpec,
-  type SimRun,
-} from './sim'
+import { runAgents, type Agent as SimAgent, type RouteSpec as SimRouteSpec, type SimRun } from './agents'
 import { Line as RLine, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 /* ------------------------------------------------------------------ */
@@ -1105,95 +1098,6 @@ const BASE_DWELL = 4 /* seconds of door cycle even with nobody waiting */
 /* Boarding is front + rear doors at once, no fare and no ID tap: Rutgers buses are free and open-boarding,
    and alighting through the rear runs in parallel, so it adds no time to the stop. */
 
-/**
- * Walking catchment: an event's crowd does not all queue at one stop, but most of it does use the
- * nearest one — people only spread when they detour for food. Deliberately steep decay.
- */
-const WALK_TAU = 1.5 /* minutes; raise toward 3 to spread the crowd further */
-/** scene units -> walking minutes (50 m/unit, 1.4 detour factor, 1.35 m/s) */
-const walkMinutes = (a: StopKey, b: StopKey) => {
-  const [ax, az] = STOPS[a].at
-  const [bx, bz] = STOPS[b].at
-  return (Math.hypot(ax - bx, az - bz) * 50 * 1.4) / 1.35 / 60
-}
-
-const CATCHMENT = new Map<StopKey, Record<StopKey, number>>()
-
-/** share of a venue's crowd that reaches one stop, by walking time (nearest stop dominates) */
-const catchmentShare = (origin: StopKey, target: StopKey) => {
-  let shares = CATCHMENT.get(origin)
-  if (!shares) {
-    const raw = (Object.keys(STOPS) as StopKey[]).map(
-      (k) => [k, Math.exp(-walkMinutes(origin, k) / WALK_TAU)] as const,
-    )
-    const sum = raw.reduce((s, [, w]) => s + w, 0)
-    shares = Object.fromEntries(raw.map(([k, w]) => [k, w / sum])) as Record<StopKey, number>
-    CATCHMENT.set(origin, shares)
-  }
-  return shares[target] ?? 0
-}
-
-/* ---------- where they queue depends on where they are going ---------- */
-
-/** one representative stop per district: where a cohort is headed */
-const REP: Record<string, StopKey> = { BU: 'bsc', LIV: 'livSc', CAC: 'cas', CD: 'redoak' }
-
-/** a flat two-minute walk to the stop; anything finer needs a walk network we do not have */
-const WALK_MIN = Object.fromEntries((Object.keys(STOPS) as StopKey[]).map((k) => [k, 2])) as Record<
-  StopKey,
-  number
->
-
-/** where a departing crowd wants to end up; the 35% off-campus share is folded into College Ave */
-const DEST_MIX: Record<string, number> = { BU: 0.2, LIV: 0.2, CAC: 0.3, CD: 0.15 }
-
-/** district tags come with the official building data (BU / LIV / CAC / CD), not from a hand-written list */
-const DISTRICTS: Record<string, StopKey[]> = {}
-
-/** which districts each stop can reach without changing buses, from the real route stop lists */
-let SERVED: Record<StopKey, Set<string>> = {} as Record<StopKey, Set<string>>
-
-/** rebuilt once the campus loads and every stop has a district */
-const rebuildServed = () => {
-  const out = {} as Record<StopKey, Set<string>>
-  for (const k of Object.keys(STOPS) as StopKey[]) out[k] = new Set<string>()
-  for (const route of ROUTES) {
-    const reach = new Set<string>()
-    for (const [district, members] of Object.entries(DISTRICTS)) {
-      if (members.some((m) => route.stops.includes(m))) reach.add(district)
-    }
-    for (const k of route.stops) for (const d of reach) out[k].add(d)
-  }
-  SERVED = out
-  EXIT.clear()
-}
-
-const EXIT = new Map<StopKey, Record<StopKey, number>>()
-
-/**
- * Outbound split for a crowd leaving a venue: walking time, discounted hard where no bus reaches
- * the rider's district without a transfer. This is why the whole crowd does not pile onto the
- * nearest stop — the nearest stop may not go where they are headed.
- */
-const exitShare = (venue: StopKey, target: StopKey) => {
-  let shares = EXIT.get(venue)
-  if (!shares) {
-    const acc = {} as Record<StopKey, number>
-    for (const k of Object.keys(STOPS) as StopKey[]) acc[k] = 0
-    for (const [district, weight] of Object.entries(DEST_MIX)) {
-      const raw = (Object.keys(STOPS) as StopKey[]).map((k) => {
-        const walk = Math.exp(-walkMinutes(venue, k) / WALK_TAU)
-        return [k, SERVED[k]?.has(district) ? walk : walk * 0.15] as const
-      })
-      const sum = raw.reduce((t, [, w]) => t + w, 0)
-      for (const [k, w] of raw) acc[k] += (weight * w) / sum
-    }
-    EXIT.set(venue, acc)
-    shares = acc
-  }
-  return shares[target] ?? 0
-}
-
 /** people per minute arriving at a stop, from every intervention in the world */
 /* ---------- campus fabric: 737 official buildings + 191 parking lots, each a trip generator ---------- */
 
@@ -1448,16 +1352,6 @@ const loadCampusOnce = async () => {
 
   CAMPUS.buildings = buildings
   CAMPUS.perStop = perStop
-  CAMPUS.districtVotes = votes
-
-  // every stop takes the campus tag of the buildings that actually surround it
-  for (const k of Object.keys(DISTRICTS)) delete DISTRICTS[k]
-  for (const [stop, tally] of Object.entries(votes)) {
-    const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0]
-    if (!top) continue
-    DISTRICTS[top] = [...(DISTRICTS[top] ?? []), stop as StopKey]
-  }
-  rebuildServed()
 }
 
 /** StrictMode runs effects twice; the campus only needs fetching once */
@@ -1473,38 +1367,6 @@ const baselineRate = (key: StopKey, minute: number, term = 1) => {
   return (perHour / 60) * (HOUR_WEIGHT[hour] ?? 0.2)
 }
 
-const arrivalRate = (w: World, key: StopKey, minute: number) => {
-  let rate = baselineRate(key, minute, TERM_DEMAND[termOf(w.date)] * w.cal) + 0.5
-
-  const e = w.event
-  if (e) {
-    const leave = e.startMin + e.durationMin
-    // going in: everyone ends at the venue, so the choice is proximity only
-    if (minute < leave) {
-      const shape = minute < e.startMin ? Math.exp(-(((e.startMin - minute) / e.rampSigma) ** 2)) : 0.1
-      if (shape > 0.01) rate += (e.rsvps / e.rampMin) * shape * catchmentShare(e.venue, key)
-    } else {
-      // coming out: where they queue depends on where they are headed
-      const shape = Math.exp(-(((minute - leave) / e.exitSigma) ** 2))
-      if (shape > 0.01) rate += (e.rsvps / e.rampMin) * shape * exitShare(e.venue, key)
-    }
-  }
-
-  for (const pl of w.places) {
-    const [open, close] = pl.hours
-    if (minute < open || minute >= close) continue
-    const mid = (open + close) / 2
-    const half = (close - open) / 2
-    const shape = Math.max(0, 1 - ((minute - mid) / half) ** 2)
-    if (shape > 0.01) rate += (pl.capacity / 90) * shape * catchmentShare(pl.stop, key)
-  }
-
-  return rate
-}
-
-/* ---------- reading the run ---------- */
-
-/** queue at a stop at a sim-relative minute — a lookup, not an integration */
 const at = (run: SimRun, key: StopKey, minute: number) => {
   const i = Math.min(run.to - 1, Math.max(0, Math.floor(minute) - run.from))
   return run.queue[key]?.[i] ?? 0
@@ -1518,9 +1380,10 @@ const stopDensity = (run: SimRun, key: StopKey, minute: number) =>
 const busesNeeded = (queued: number) => Math.max(0, Math.ceil(queued / (BUS_CAPACITY * 0.8)))
 
 /** the chart: the next hour, six-minute steps */
+/** the last hour, from what the agents actually did */
 const series = (run: SimRun, key: StopKey, now: number) =>
   Array.from({ length: 11 }, (_, i) => {
-    const min = Math.round(now + i * 6)
+    const min = Math.max(run.from, Math.round(now - 60 + i * 6))
     return { t: fmt(min), density: stopDensity(run, key, min) }
   })
 
@@ -1553,22 +1416,6 @@ const fleetFor = (route: (typeof ROUTES)[number], headway: number, scale: number
 const FLEET_OBSERVED: Partial<Record<string, number>> = { W1: 4, W2: 5 }
 
 /** the ten routes as the engine wants them: ordered halts, and a headway that knows the date */
-const SIM_ROUTES = (date: string): SimRouteSpec[] =>
-  ROUTES.map((route) => ({
-    ref: route.ref,
-    colour: route.colour,
-    len: route.len,
-    halts: route.stops.map((k, i) => ({ k, d: route.haltD[i] })).sort((a, b) => a.d - b.d),
-    headway: (m: number) => headwayAt(route, m, date),
-  }))
-
-/** stop -> every stop reachable on a single bus, for the one-transfer rule */
-const REACH: Record<StopKey, Set<StopKey>> = (() => {
-  const out = {} as Record<StopKey, Set<StopKey>>
-  for (const k of Object.keys(STOPS) as StopKey[]) out[k] = new Set<StopKey>([k])
-  for (const route of ROUTES) for (const a of route.stops) for (const b of route.stops) out[a].add(b)
-  return out
-})()
 
 type Preset = { id: string; label: string; apply: (w: World) => World }
 
@@ -1852,48 +1699,9 @@ const NODES: { name: string; key: StopKey }[] = [
 /* ------------------------------------------------------------------ */
 
 /** ponytail: ~20x oversized so people read at 50 m/unit; zoom to maxZoom 40 for figures */
-/** layover stops: student centres, and Red Oak Lane for Cook/Douglass */
-const BREAK_STOPS: StopKey[] = ['bsc', 'livSc', 'cas', 'redoak']
-
-const SHIRTS = ['#ee0000', '#1e3a8a', '#0f766e', '#f59e0b', '#7c3aed', '#0891b2', '#c2410c', '#4d7c0f']
-const SKINS = ['#f2d3b3', '#d9a066', '#b57a4a', '#8a5a34', '#efc9a4', '#c98d63']
 
 /** one figure. Static stance, animated by whatever group carries it — 120 of these must not each own a frame callback. */
-function Person({ shirt, skin, scale = 0.5 }: { shirt: string; skin: string; scale?: number }) {
-  return (
-    <group scale={scale}>
-      <group position={[-0.075, 0.3, 0]} rotation-x={0.26}>
-        <mesh>
-          <capsuleGeometry args={[0.055, 0.24, 3, 6]} />
-          <meshStandardMaterial color="#334155" roughness={0.9} />
-        </mesh>
-      </group>
-      <group position={[0.075, 0.3, 0]} rotation-x={-0.26}>
-        <mesh>
-          <capsuleGeometry args={[0.055, 0.24, 3, 6]} />
-          <meshStandardMaterial color="#334155" roughness={0.9} />
-        </mesh>
-      </group>
-      <mesh position={[0, 0.62, 0]}>
-        <capsuleGeometry args={[0.14, 0.26, 4, 8]} />
-        <meshStandardMaterial color={shirt} roughness={0.75} />
-      </mesh>
-      <mesh position={[0, 0.9, 0]}>
-        <sphereGeometry args={[0.105, 12, 12]} />
-        <meshStandardMaterial color={skin} roughness={0.7} />
-      </mesh>
-      <mesh position={[-0.19, 0.64, 0]} rotation-z={0.18}>
-        <capsuleGeometry args={[0.04, 0.2, 3, 6]} />
-        <meshStandardMaterial color={shirt} roughness={0.8} />
-      </mesh>
-      <mesh position={[0.19, 0.64, 0]} rotation-z={-0.18}>
-        <capsuleGeometry args={[0.04, 0.2, 3, 6]} />
-        <meshStandardMaterial color={shirt} roughness={0.8} />
-      </mesh>
-    </group>
-  )
-}
-
+/** a bus, driven by the run's own positions rather than by a frame-rate guess */
 function Bus({
   route,
   track,
@@ -1901,7 +1709,6 @@ function Bus({
 }: {
   route: (typeof ROUTES)[number]
   track: { t: number; d: number; load: number }[]
-  /** sim-relative minutes */
   minute: number
 }) {
   const g = useRef<ThreeGroup>(null)
@@ -1912,9 +1719,9 @@ function Bus({
     const i = Math.min(track.length - 2, Math.max(0, Math.floor(minute) - track[0].t))
     const a = track[i]
     const b = track[i + 1]
-    // a hop this large is the loop wrapping, not motion: hold the last sample
-    const gap = Math.abs(b.d - a.d) > route.len / 2 ? 0 : (minute - a.t) / Math.max(0.001, b.t - a.t)
-    const d = a.d + (b.d - a.d) * Math.max(0, Math.min(1, gap))
+    const wrap = Math.abs(b.d - a.d) > route.len / 2
+    const f = wrap ? 0 : (minute - a.t) / Math.max(0.001, b.t - a.t)
+    const d = wrap ? a.d : a.d + (b.d - a.d) * Math.max(0, Math.min(1, f))
     const p = samplePath(route.path, route.len, d)
     node.position.set(p.x, 0.1, p.z)
     node.rotation.y = p.rot
@@ -1922,7 +1729,6 @@ function Bus({
 
   return (
     <group ref={g}>
-      {/* ponytail: 2.6x — the same exaggeration the people get, or a bus is five pixels of white */}
       <group scale={2.6}>
         <mesh position={[0, 0.12, 0]}>
           <boxGeometry args={[0.62, 0.16, 0.24]} />
@@ -1938,6 +1744,34 @@ function Bus({
         </mesh>
       </group>
     </group>
+  )
+}
+
+/** every agent, one draw call. Riders are hidden inside the bus they are on. */
+function Crowd({ agents, size }: { agents: SimAgent[]; size: number }) {
+  const ref = useRef<THREE.InstancedMesh>(null)
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+
+  useFrame(() => {
+    const mesh = ref.current
+    if (!mesh) return
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i]
+      const shown = a.state !== 'ride'
+      dummy.position.set(a.x, shown ? size * 0.55 : -80, a.z)
+      const s = shown ? size : 0.001
+      dummy.scale.set(s * 0.34, s, s * 0.34)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  })
+
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, Math.max(1, agents.length)]} frustumCulled={false}>
+      <capsuleGeometry args={[0.5, 1.2, 3, 6]} />
+      <meshStandardMaterial color="#ee0000" roughness={0.75} />
+    </instancedMesh>
   )
 }
 
@@ -2161,19 +1995,16 @@ function Scene({
   agents,
   day,
   minute,
-  nowMin,
   nowF,
   personScale,
   setPersonScale,
 }: {
   world: World
   run: SimRun
-  agents: Agent[]
+  agents: SimAgent[]
   day: Day
   /** absolute minutes since midnight — for the service calendar */
   minute: number
-  /** sim-relative whole minutes — for lookups into the run */
-  nowMin: number
   /** sim-relative fractional minutes — for smooth motion */
   nowF: number
   /** figures grow as you zoom in, so a person is never an ant nor a monolith */
@@ -2194,23 +2025,6 @@ function Scene({
 
   const venue = world.event?.venue ?? 'arc'
   /* ponytail: tokens follow the run's queue across stops, capped so the map stays readable */
-  const tokenPlan = (() => {
-    // a token every ~5 people, biggest queues first, hard cap so the map stays interactive
-    const all = (Object.keys(STOPS) as StopKey[])
-      .map((k) => ({ k, n: Math.min(18, Math.round(at(run, k, nowMin) / 5)) }))
-      .filter((t) => t.n > 0)
-      .sort((a, b) => b.n - a.n)
-    const out: { k: StopKey; n: number }[] = []
-    let budget = 70
-    for (const t of all) {
-      if (budget <= 0) break
-      const n = Math.min(t.n, budget)
-      out.push({ k: t.k, n })
-      budget -= n
-    }
-    return out
-  })()
-
   return (
     <>
       <color attach="background" args={['#bfe0f5']} />
@@ -2251,50 +2065,8 @@ function Scene({
         return <Bus key={`${b.ref}-${i}`} route={route} track={b.track} minute={nowF} />
       })}
 
-      {tokenPlan.flatMap(({ k, n }) =>
-        Array.from({ length: n }).map((_, i) => {
-          const [x, z] = STOPS[k].at
-          const a = (i / n) * Math.PI * 2
-          return (
-            <group
-              key={`${k}-${i}`}
-              position={[
-                x + Math.cos(a + nowF * 1.2 + i) * (0.45 + (i % 3) * 0.22),
-                0.02,
-                z + Math.sin(a + nowF * 1.2 + i) * (0.45 + (i % 3) * 0.22),
-              ]}
-            >
-              <Person shirt={SHIRTS[i % SHIRTS.length]} skin={SKINS[i % SKINS.length]} scale={personScale} />
-            </group>
-          )
-        }),
-      )}
-
-      {/* forty people with somewhere to be: walk, wait, ride, walk, class, home */}
-      {agents.map((a) => {
-        const st = agentAt(a, nowF)
-        if (st.mode === 'home' || st.mode === 'class' || st.mode === 'ride') return null
-        const [x1, z1] = STOPS[st.from as StopKey].at
-        const [x2, z2] = STOPS[st.to as StopKey].at
-        const f = st.mode === 'walk' ? st.f : 0.82
-        const wobble = st.mode === 'wait' ? 0.7 : 0
-        return (
-          <group
-            key={a.id}
-            position={[
-              x1 + (x2 - x1) * f + Math.cos(a.id * 2.4) * wobble,
-              0.02,
-              z1 + (z2 - z1) * f + Math.sin(a.id * 2.4) * wobble,
-            ]}
-          >
-            <Person
-              shirt={SHIRTS[a.id % SHIRTS.length]}
-              skin={SKINS[a.id % SKINS.length]}
-              scale={personScale}
-            />
-          </group>
-        )
-      })}
+      {/* the crowd is the simulation: every figure below is an agent with somewhere to be */}
+      <Crowd agents={agents} size={personScale} />
     </>
   )
 }
@@ -2367,7 +2139,7 @@ export default function App() {
   const [prompt, setPrompt] = useState('')
   const [lastCommand, setLastCommand] = useState<{ text: string; notes: string[] } | null>(null)
 
-  const [, setCampusRev] = useState(0)
+  const [campusRev, setCampusRev] = useState(0)
 
   useEffect(() => {
     if (!running) return
@@ -2407,52 +2179,48 @@ export default function App() {
   /** one whole simulated day for a world; memoised on the world, never on the animating clock */
   const makeRun = (w: World, reserveBuses: number): SimRun => {
     const reserveRoute = ROUTES.find((r) => r.stops.includes(venueKey))?.ref ?? 'H'
-    const fleet: Record<string, number> = {}
-    for (const route of ROUTES) {
+    const routes: SimRouteSpec[] = ROUTES.map((route) => {
       const hw = headwayAt(route, 30, w.date)
-      fleet[route.ref] =
-        hw === null ? 0 : (FLEET_OBSERVED[route.ref] ?? fleetFor(route, hw, w.serviceScale[route.ref] ?? 1))
-    }
-    fleet[reserveRoute] = (fleet[reserveRoute] ?? 0) + reserveBuses // the button now adds a real vehicle
-
-    return runFleet({
-      stops: Object.keys(STOPS) as StopKey[],
-      from: 0,
-      to: 24 * 60,
-      routes: SIM_ROUTES(w.date),
-      fleet,
-      capacity: BUS_CAPACITY,
-      boardRate: BOARD_RATE * 60,
-      baseDwell: BASE_DWELL / 60,
-      speed: (BUS_SPEED_KMH * 1000) / 60 / 50, // 18 km/h in 50 m units per minute
-      timepoints: BREAK_STOPS,
-      giveUp: 45,
-      breakStops: BREAK_STOPS,
-      breakChance: 0.06,
-      breakMinutes: [3, 8],
-      reach: REACH,
-      noise: dayNoise,
-      seed,
-      arrivals: (stop, t) => {
-        // a closed stop takes no passengers — that is what closing it means
-        if (w.closed.includes(stop as StopKey)) return []
-        const rate = arrivalRate(w, stop as StopKey, t)
-        return Object.entries(DEST_MIX).map(([district, mix]) => ({
-          dest: REP[district],
-          count: Math.round(rate * mix * 100) / 100,
-        }))
-      },
+      const scale = w.serviceScale[route.ref] ?? 1
+      const base = hw === null ? 0 : (FLEET_OBSERVED[route.ref] ?? fleetFor(route, hw, scale))
+      return {
+        ref: route.ref,
+        stops: route.stops,
+        haltD: route.haltD,
+        len: route.len,
+        speed: (BUS_SPEED_KMH * 1000) / 60 / 50,
+        fleet: base + (route.ref === reserveRoute ? reserveBuses : 0),
+        sample: (d: number) => samplePath(route.path, route.len, d),
+      }
     })
+
+    return runAgents(
+      {
+        buildings: CAMPUS.buildings.map((b, i) => ({ id: i, x: b.x, z: b.z, kind: b.cat, stop: b.stop })),
+        stops: Object.fromEntries((Object.keys(STOPS) as StopKey[]).map((k) => [k, STOPS[k].at])) as Record<
+          string,
+          [number, number]
+        >,
+        routes,
+        capacity: BUS_CAPACITY,
+        walkSpeed: 1.62, // 1.35 m/s at 50 m per unit, in units per minute
+        population: 600,
+        seed,
+        startClock: SIM_BASE,
+      },
+      nowMin + 1,
+      0,
+    )
   }
 
-  const run = useMemo(() => makeRun(world, reserves), [world, reserves, venueKey, dayNoise, seed]) // eslint-disable-line react-hooks/exhaustive-deps
-  const agents = useMemo(() => buildAgents(run, WALK_MIN, 120), [run])
-  // dev-only: the run is the model, so make it inspectable from the console
-  if (import.meta.env.DEV) (window as any).__sim = { run, agents, world }
+  // the agent sim is replayed in three-minute slices: cheap, and positions stay continuous
+  const slice = Math.floor(simMin / 3) * 3
+  const run = useMemo(() => makeRun(world, reserves), [world, reserves, slice, campusRev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const agents = run.agents
 
   const queued = at(run, venueKey, nowMin)
   const chart = useMemo(() => series(run, venueKey, simMin), [run, venueKey, simMin])
-  const peak = useMemo(() => peakOver(run, venueKey, simMin, simMin + 60), [run, venueKey, simMin])
+  const peak = useMemo(() => peakOver(run, venueKey, simMin - 60, simMin), [run, venueKey, simMin])
   const needed = Math.max(0, busesNeeded(queued) - reserves)
   const modelledHour = baselineRate(venueKey, nowMin, TERM_DEMAND[termOf(date)] * cal) * 60
 
@@ -2572,7 +2340,6 @@ export default function App() {
           agents={agents}
           day={day}
           minute={minute}
-          nowMin={nowMin}
           nowF={simMin}
           personScale={personScale}
           setPersonScale={setPersonScale}
