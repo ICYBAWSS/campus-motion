@@ -3,7 +3,6 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import NET from './network.json'
-import satelliteUrl from './data/satellite.jpg'
 import { BUS_SPEED, CAPACITY, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
 import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
@@ -130,29 +129,6 @@ function Buildings({ data }: { data: B[] }) {
   )
 }
 
-const SAT_FRAME = { x0: -70, x1: 70, z0: -110, z1: 110 }
-
-/** the actual ground: Esri World Imagery exported over the campus bounding box */
-function SatelliteGround() {
-  const tex = useMemo(() => {
-    const t = new THREE.TextureLoader().load(satelliteUrl)
-    t.colorSpace = THREE.SRGBColorSpace
-    t.anisotropy = 8
-    return t
-  }, [])
-  const w = SAT_FRAME.x1 - SAT_FRAME.x0
-  const h = SAT_FRAME.z1 - SAT_FRAME.z0
-  return (
-    <mesh
-      rotation-x={-Math.PI / 2}
-      position={[(SAT_FRAME.x0 + SAT_FRAME.x1) / 2, -0.02, (SAT_FRAME.z0 + SAT_FRAME.z1) / 2]}
-    >
-      <planeGeometry args={[w, h]} />
-      <meshBasicMaterial map={tex} toneMapped={false} />
-    </mesh>
-  )
-}
-
 /** grass, asphalt and concrete, all from the routing graph so nothing floats */
 function Ground() {
   const { road, walk } = useMemo(() => {
@@ -222,9 +198,10 @@ function Ground() {
 
   return (
     <>
-      {/* real satellite imagery, georeferenced to the same projection as everything else:
-          stops x -70..70, z -110..110 — see scripts/fetch-satellite.mjs */}
-      <SatelliteGround />
+      <mesh rotation-x={-Math.PI / 2} position={[0, -0.02, 0]}>
+        <planeGeometry args={[200, 320]} />
+        <meshStandardMaterial color="#93cf7c" roughness={1} />
+      </mesh>
       <mesh geometry={road} position={[0, 0.01, 0]}>
         <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
