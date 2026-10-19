@@ -4,7 +4,7 @@ import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import NET from './network.json'
 import satelliteUrl from './data/satellite.jpg'
-import { CAPACITY, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
+import { BUS_SPEED, CAPACITY, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
 import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
 const M = 50
@@ -244,8 +244,14 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
     const x = bus.px + (bus.x - bus.px) * f
     const z = bus.pz + (bus.z - bus.pz) * f
     node.position.set(x, 0, z)
-    const ahead = sampleAt(bus, 0.15)
-    node.rotation.y = Math.atan2(ahead[0] - x, ahead[1] - z)
+    // heading from the path itself, at the *interpolated* distance, so the bus
+    // never lags a frame behind its own nose
+    const dNow = bus.d - (1 - f) * BUS_SPEED
+    const p0 = atDistance(bus, dNow)
+    const p1 = atDistance(bus, dNow + 1.5)
+    const dx = p1[0] - p0[0]
+    const dz = p1[1] - p0[1]
+    if (dx || dz) node.rotation.y = Math.atan2(-dz, dx)
   })
   const load = bus.riders.length / CAPACITY
   return (
@@ -304,8 +310,9 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
   )
 }
 
-function sampleAt(bus: Bus, ahead: number): [number, number] {
-  const d = (bus.d + ahead) % bus.route.len
+function atDistance(bus: Bus, distance: number): [number, number] {
+  const len = bus.route.len
+  const d = ((distance % len) + len) % len
   const path = bus.route.path
   let acc = 0
   for (let i = 1; i < path.length; i++) {

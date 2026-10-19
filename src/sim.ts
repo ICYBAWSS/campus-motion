@@ -4,10 +4,10 @@
  * Units: 1 scene unit = 50 m, 1 tick = 1 simulated minute.
  * Speeds are therefore in units per minute: 18 km/h = 6 u/min, walking 1.35 m/s = 1.62 u/min.
  */
-import stopsData from './data/stops.json'
-import routesData from './data/routes.json'
-import pathsData from './data/paths.json'
-import { pathLength, samplePath, walkRoute, type P } from './network'
+import stopsData from './data/stops.json' with { type: 'json' }
+import routesData from './data/routes.json' with { type: 'json' }
+import pathsData from './data/paths.json' with { type: 'json' }
+import { pathLength, samplePath, walkRoute, type P } from './network.ts'
 
 export type StopKey = keyof typeof stopsData
 export type Stop = { label: string; lat: number; lon: number; at: P }
