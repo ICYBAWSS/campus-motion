@@ -4,7 +4,13 @@ import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import roads from './roads.json'
 import type { Group as ThreeGroup } from 'three'
-import { runAgents, type Agent as SimAgent, type RouteSpec as SimRouteSpec, type SimRun } from './agents'
+import {
+  createSim,
+  type Agent as SimAgent,
+  type RouteSpec as SimRouteSpec,
+  type Sim,
+  type SimRun,
+} from './agents'
 import { Line as RLine, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 /* ------------------------------------------------------------------ */
@@ -1782,9 +1788,12 @@ function Bus({
 }
 
 /** every agent, one draw call. Riders are hidden inside the bus they are on. */
-function Crowd({ agents, size }: { agents: SimAgent[]; size: number }) {
+/** every agent, one draw call, interpolated between the last two simulated minutes */
+function Crowd({ agents, size, minute }: { agents: SimAgent[]; size: number; minute: number }) {
   const ref = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
+  const colour = useMemo(() => new THREE.Color(), [])
+  const f = minute - Math.floor(minute)
 
   useFrame(() => {
     const mesh = ref.current
@@ -1792,19 +1801,25 @@ function Crowd({ agents, size }: { agents: SimAgent[]; size: number }) {
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]
       const shown = a.state !== 'ride'
-      dummy.position.set(a.x, shown ? size * 0.55 : -80, a.z)
+      const x = a.px + (a.x - a.px) * f
+      const z = a.pz + (a.z - a.pz) * f
+      dummy.position.set(x, shown ? size * 0.5 : -80, z)
       const s = shown ? size : 0.001
-      dummy.scale.set(s * 0.34, s, s * 0.34)
+      dummy.scale.set(s * 0.3, s, s * 0.3)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
+      // waiting = warm red, walking = the shirt colour, at school = grey
+      const c = a.state === 'wait' ? '#d9483b' : a.state === 'at-dest' ? '#94a3b8' : a.colour
+      mesh.setColorAt(i, colour.set(c))
     }
     mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   })
 
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, Math.max(1, agents.length)]} frustumCulled={false}>
-      <capsuleGeometry args={[0.5, 1.2, 3, 6]} />
-      <meshStandardMaterial color="#ee0000" roughness={0.75} />
+      <capsuleGeometry args={[0.35, 1, 3, 8]} />
+      <meshStandardMaterial roughness={0.8} />
     </instancedMesh>
   )
 }
@@ -2100,7 +2115,7 @@ function Scene({
       })}
 
       {/* the crowd is the simulation: every figure below is an agent with somewhere to be */}
-      <Crowd agents={agents} size={personScale} />
+      <Crowd agents={agents} size={personScale} minute={nowF} />
     </>
   )
 }
@@ -2211,7 +2226,7 @@ export default function App() {
   const nowMin = Math.floor(simMin)
 
   /** one whole simulated day for a world; memoised on the world, never on the animating clock */
-  const makeRun = (w: World, reserveBuses: number): SimRun => {
+  const makeWorld = (w: World, reserveBuses: number) => {
     const reserveRoute = ROUTES.find((r) => r.stops.includes(venueKey))?.ref ?? 'H'
     const routes: SimRouteSpec[] = ROUTES.map((route) => {
       const hw = headwayAt(route, 30, w.date)
@@ -2228,38 +2243,45 @@ export default function App() {
       }
     })
 
-    return runAgents(
-      {
-        buildings: CAMPUS.buildings.map((b, i) => ({ id: i, x: b.x, z: b.z, kind: b.cat, stop: b.stop })),
-        stops: Object.fromEntries((Object.keys(STOPS) as StopKey[]).map((k) => [k, STOPS[k].at])) as Record<
-          string,
-          [number, number]
-        >,
-        routes,
-        capacity: BUS_CAPACITY,
-        walkSpeed: 1.62, // 1.35 m/s at 50 m per unit, in units per minute
-        population: 600,
-        seed,
-        startClock: SIM_BASE,
-      },
-      nowMin + 1,
-      0,
-    )
+    return {
+      buildings: CAMPUS.buildings.map((b, i) => ({ id: i, x: b.x, z: b.z, kind: b.cat, stop: b.stop })),
+      stops: Object.fromEntries((Object.keys(STOPS) as StopKey[]).map((k) => [k, STOPS[k].at])) as Record<
+        string,
+        [number, number]
+      >,
+      routes,
+      capacity: BUS_CAPACITY,
+      walkSpeed: 1.62, // 1.35 m/s at 50 m per unit, in units per minute
+      population: 600,
+      seed,
+      startClock: SIM_BASE,
+    }
   }
 
-  // the agent sim is replayed in three-minute slices: cheap, and positions stay continuous
-  const slice = Math.floor(simMin / 3) * 3
-  const run = useMemo(() => makeRun(world, reserves), [world, reserves, slice, campusRev]) // eslint-disable-line react-hooks/exhaustive-deps
-  const agents = run.agents
+  // one live simulation, stepped forward to the clock. Never re-run from zero.
+  const simKey = `${campusRev}|${date}|${cal}|${seed}|${reserves}|${JSON.stringify(world)}`
+  const simRef = useRef<{ key: string; sim: Sim } | null>(null)
+  if (!simRef.current || simRef.current.key !== simKey) {
+    simRef.current = { key: simKey, sim: createSim(makeWorld(world, reserves), 0) }
+  }
+  simRef.current.sim.runTo(nowMin)
+  const sim = simRef.current.sim
+  const agents = sim.agents
+  const run: SimRun = sim.snapshot()
 
   const queued = at(run, venueKey, nowMin)
-  const chart = useMemo(() => series(run, venueKey, simMin), [run, venueKey, simMin])
+  const chart = useMemo(() => series(run, venueKey, nowMin), [nowMin, venueKey, run])
   const peak = useMemo(() => peakOver(run, venueKey, simMin - 60, simMin), [run, venueKey, simMin])
   const needed = Math.max(0, busesNeeded(queued) - reserves)
   const modelledHour = baselineRate(venueKey, nowMin, TERM_DEMAND[termOf(date)] * cal) * 60
 
   // A/B: same clock, same day, two worlds — each with its own run
-  const baseRun = useMemo(() => (baseline ? makeRun(baseline, 0) : null), [baseline]) // eslint-disable-line react-hooks/exhaustive-deps
+  const baseRun = useMemo(() => {
+    if (!baseline) return null
+    const b = createSim(makeWorld(baseline, 0), 0)
+    b.runTo(nowMin)
+    return b.snapshot()
+  }, [baseline, nowMin]) // eslint-disable-line react-hooks/exhaustive-deps
   const baseQueued = baseRun ? at(baseRun, venueKey, nowMin) : null
   const baseNeeded = baseQueued === null ? null : Math.max(0, busesNeeded(baseQueued))
   const queueDelta =

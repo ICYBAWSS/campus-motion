@@ -59,6 +59,9 @@ export type Agent = {
   dest: BuildingId
   x: number
   z: number
+  /** where they were one simulated minute ago, for interpolation */
+  px: number
+  pz: number
   state: AgentState
   /** minute the current state began */
   since: number
@@ -81,6 +84,9 @@ export type Agent = {
 }
 
 export type Bus = {
+  /** previous position, for interpolation */
+  px: number
+  pz: number
   ref: string
   route: RouteSpec
   /** unbounded distance along the path */
@@ -154,7 +160,19 @@ const planDay = (world: SimWorld, rand: () => number, home: BuildingSpec): Appoi
   return plan.sort((a, b) => a.t - b.t)
 }
 
-export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
+/** a live simulation: step it forward one simulated minute at a time */
+export type Sim = {
+  agents: Agent[]
+  buses: Bus[]
+  queue: Record<StopId, number[]>
+  boarded: Record<StopId, number[]>
+  leftBehind: Record<StopId, number[]>
+  runTo: (minute: number) => void
+  minute: number
+  snapshot: () => SimRun
+}
+
+export function createSim(world: SimWorld, from = 0): Sim {
   const rand = prng(world.seed)
   const stops = Object.keys(world.stops)
   const zero = () => Object.fromEntries(stops.map((k) => [k, [] as number[]])) as Record<StopId, number[]>
@@ -181,6 +199,8 @@ export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
         at,
         x: p.x,
         z: p.z,
+        px: p.x,
+        pz: p.z,
         halt: 0,
         wait: 0,
         riders: [],
@@ -204,6 +224,8 @@ export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
       dest: home.id,
       x: home.x,
       z: home.z,
+      px: home.x,
+      pz: home.z,
       state: 'home',
       since: from,
       stop: home.stop,
@@ -234,7 +256,12 @@ export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
     a.until = appt?.until ?? t + 45
   }
 
-  for (let t = from; t < to; t++) {
+  const tick = (t: number) => {
+    for (const a of agents) {
+      a.px = a.x
+      a.pz = a.z
+    }
+
     // ---------- people ----------
     for (const a of agents) {
       switch (a.state) {
@@ -394,6 +421,8 @@ export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
       }
 
       const p = route.sample(b.at % route.len)
+      b.px = b.x
+      b.pz = b.z
       b.x = p.x
       b.z = p.z
       track[bi].push({ t, d: b.at % route.len, load: b.riders.length, halt: null })
@@ -413,20 +442,50 @@ export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
       if (leftBehind[k].length < t - from + 1) leftBehind[k].push(0)
     }
   }
+  let minute = from
+  const runTo = (target: number) => {
+    // guard: never simulate more than a day forward in one call
+    const stop = Math.min(target, from + 24 * 60)
+    while (minute < stop) {
+      tick(minute)
+      minute++
+    }
+  }
 
-  const meanTrip = {} as Record<StopId, number>
-  for (const [k, v] of Object.entries(totals)) meanTrip[k] = v.n ? v.sum / v.n : 0
+  const snapshot = (): SimRun => {
+    const meanTrip = {} as Record<StopId, number>
+    for (const [k, v] of Object.entries(totals)) meanTrip[k] = v.n ? v.sum / v.n : 0
+    return {
+      from,
+      to: minute,
+      stops,
+      queue,
+      boarded,
+      leftBehind,
+      meanTrip,
+      buses: buses.map((b, i) => ({ ref: b.ref, track: track[i] ?? [] })),
+      agents,
+      trips,
+    }
+  }
 
   return {
-    from,
-    to,
-    stops,
+    agents,
+    buses,
     queue,
     boarded,
     leftBehind,
-    meanTrip,
-    buses: buses.map((b, i) => ({ ref: b.ref, track: track[i] })),
-    agents,
-    trips,
+    runTo,
+    get minute() {
+      return minute
+    },
+    snapshot,
   }
+}
+
+/** one-shot run, used by the tests */
+export function runAgents(world: SimWorld, to: number, from = 0): SimRun {
+  const sim = createSim(world, from)
+  sim.runTo(to)
+  return sim.snapshot()
 }
