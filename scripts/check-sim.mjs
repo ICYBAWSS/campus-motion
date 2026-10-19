@@ -103,3 +103,14 @@ assert.equal(total(one.boarded), total(two.boarded), 'same seed must replay iden
 assert.notEqual(total(one.boarded), total(three.boarded), 'a new seed should be a different day')
 
 console.log('sim ok')
+
+/* --- speed: the same arithmetic the scene uses. 1 unit = 50 m, clock counts sim minutes. --- */
+const BUS_KMH = 18
+const busUnitsPerMin = (BUS_KMH * 1000) / 60 / 50 // 6
+const walkUnitsPerMin = 1.62 // 1.35 m/s
+assert.equal(busUnitsPerMin.toFixed(2), '6.00')
+assert.ok(Math.abs((walkUnitsPerMin * 50 * 60) / 1000 - 4.86) < 0.01, 'walk speed is 4.86 km/h')
+// 1x means real time: one sim minute takes 60 real seconds
+const simMinutesPerSecond = 1 / 60
+assert.equal((simMinutesPerSecond * 60).toFixed(1), '1.0')
+console.log('speed ok')

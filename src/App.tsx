@@ -2180,7 +2180,7 @@ function Scene({
 }) {
   // advance the simulation off the frame clock, not off React renders
   useFrame((_, dt) => {
-    clock.t += Math.min(0.25, dt) * speed
+    clock.t += (Math.min(0.25, dt) * speed) / 60 /* speed is real-time multiple; clock is in sim minutes */
     const target = Math.floor(clock.t)
     if (target > sim.minute) sim.runTo(target)
   }, -1)
@@ -2312,7 +2312,7 @@ export default function App() {
   const [cal, setCal] = useState<number>(() => Number(localStorage.getItem('rutgers-twin-cal') ?? '1'))
   const [customs, setCustoms] = useState<Preset[]>([])
   const [simMin, setSimMin] = useState(30)
-  const [speed, setSpeed] = useState(4)
+  const [speed, setSpeed] = useState(60)
   /** live orthographic zoom, surfaced as a scale bar so the scale is never in doubt */
   const [zoomNow, setZoomNow] = useState(120)
   const controls = useRef<any>(null)
@@ -2327,7 +2327,7 @@ export default function App() {
 
   useEffect(() => {
     if (!running) return
-    const id = setInterval(() => setSimMin((m) => m + speed * 0.4), 400)
+    const id = setInterval(() => setSimMin((m) => m + (speed * 0.4) / 60), 400)
     return () => clearInterval(id)
   }, [running, speed])
 
@@ -2610,7 +2610,7 @@ export default function App() {
             >
               {running ? 'Pause' : 'Play'}
             </button>
-            {[1, 4, 16].map((s) => (
+            {[1, 10, 60, 240].map((s) => (
               <button
                 key={s}
                 onClick={() => setSpeed(s)}
@@ -2620,7 +2620,7 @@ export default function App() {
                     : 'border border-slate-200 bg-white/70 text-slate-600'
                 }`}
               >
-                {s}x
+                {s === 1 ? '1x' : `${s}x`}
               </button>
             ))}
           </div>
