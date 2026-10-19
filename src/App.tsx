@@ -22,6 +22,9 @@ const VERIZON_RED = '#ee0000'
 const CENTER: [number, number] = [40.5028, -74.447]
 /** ponytail: 50 m/unit is the only scale where all five campuses fit one frame */
 const M_PER_UNIT = 50
+
+/** every entity below is specified in metres and converted here, so the scene is 1:1 with reality */
+const m = (metres: number) => metres / M_PER_UNIT
 const KX = 111320 * Math.cos((CENTER[0] * Math.PI) / 180)
 const KY = 110574
 
@@ -1355,7 +1358,7 @@ const loadCampusOnce = async () => {
       w: Math.max(0.2, box.w),
       d: Math.max(0.2, box.d),
       rot: box.rot,
-      h: floors * 0.18 /* exaggerated ~2.5x so a 4-storey block is visible at 50 m/unit */,
+      h: floors * m(3.6) /* one storey = 3.6 m, true height */,
       cat,
       name: LANDMARK_NUM[p.BldgNum] ?? '',
       district,
@@ -1779,7 +1782,7 @@ function Bus({
 
   return (
     <group ref={g}>
-      <group scale={2.2}>
+      <group scale={m(12) / 2.1}>
         {/* body */}
         <mesh position={[0, 0.42, 0]}>
           <boxGeometry args={[2.1, 0.44, 0.86]} />
@@ -1878,9 +1881,9 @@ function Crowd({
       const shown = a.state !== 'ride' && !skip.has(a.id)
       const x = a.px + (a.x - a.px) * f
       const z = a.pz + (a.z - a.pz) * f
-      dummy.position.set(x, shown ? size * 0.5 : -80, z)
-      const s = shown ? size : 0.001
-      dummy.scale.set(s * 0.3, s, s * 0.3)
+      const s = shown ? size / 1.7 : 0.0001
+      dummy.position.set(x, shown ? s * 0.85 : -80, z)
+      dummy.scale.set(s, s, s)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
       // waiting = warm red, walking = the shirt colour, at school = grey
@@ -1893,6 +1896,7 @@ function Crowd({
 
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, Math.max(1, agents.length)]} frustumCulled={false}>
+      {/* 1.7 model units tall, scaled by size to a real 1.75 m */}
       <capsuleGeometry args={[0.35, 1, 3, 8]} />
       <meshStandardMaterial roughness={0.8} />
     </instancedMesh>
@@ -1902,7 +1906,7 @@ function Crowd({
 function RouteLine({ route, active }: { route: (typeof ROUTES)[number]; active: boolean }) {
   return (
     <Line
-      points={route.path.map(([x, z]) => [x, 0.9, z])}
+      points={route.path.map(([x, z]) => [x, 0.05, z])}
       color={route.colour}
       lineWidth={active ? 2.4 : 1.2}
       transparent
@@ -1927,15 +1931,15 @@ function StopMark({
   return (
     <group position={[at[0], 0, at[1]]}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.06, 0]}>
-        <circleGeometry args={[major ? 0.7 : 0.42, 18]} />
+        <circleGeometry args={[m(major ? 5 : 3), 18]} />
         <meshStandardMaterial color={closed ? '#fecaca' : '#ffffff'} opacity={0.9} transparent />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.07, 0]}>
-        <ringGeometry args={[major ? 0.5 : 0.3, major ? 0.62 : 0.38, 20]} />
+        <ringGeometry args={[m(major ? 3.6 : 2.4), m(major ? 5 : 3.2), 20]} />
         <meshStandardMaterial color={closed ? '#dc2626' : '#475569'} />
       </mesh>
       {major && (
-        <Html position={[0, 1.1, 0]} center style={{ pointerEvents: 'none' }}>
+        <Html position={[0, m(major ? 14 : 10), 0]} center style={{ pointerEvents: 'none' }}>
           <div
             className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[8px] font-semibold shadow-sm ring-1 ring-black/5 ${
               closed ? 'bg-red-50 text-red-700' : 'bg-white/90 text-slate-700'
@@ -1986,15 +1990,15 @@ function PlaceMass({ place }: { place: Place }) {
  * the same way everything else at 1:50 is.
  */
 const ROAD_WIDTH: Record<string, number> = {
-  motorway: 0.9,
-  trunk: 0.9,
-  primary: 0.8,
-  secondary: 0.6,
-  tertiary: 0.5,
-  residential: 0.34,
-  unclassified: 0.34,
-  living_street: 0.3,
-  service: 0.2,
+  motorway: m(22),
+  trunk: m(22),
+  primary: m(18),
+  secondary: m(14),
+  tertiary: m(11),
+  residential: m(8),
+  unclassified: m(8),
+  living_street: m(6),
+  service: m(5.5),
 }
 
 const ROAD_COLOUR: Record<string, number[]> = {
@@ -2093,13 +2097,16 @@ function Buildings({ data }: { data: CampusBuilding[] }) {
 }
 
 /** the two named landmarks keep their labels; everything else is colour-coded mass */
+const STOP_LABELS = new Set<string>(Object.values(STOPS).map((s) => s.label))
+
 function LandmarkLabels({ data }: { data: CampusBuilding[] }) {
   return (
     <>
       {data
-        .filter((b) => b.name)
+        /* a stop marker already names its own building — don't stack two labels on one roof */
+        .filter((b) => b.name && !STOP_LABELS.has(b.name))
         .map((b) => (
-          <Html key={b.name} position={[b.x, b.h + 0.45, b.z]} center style={{ pointerEvents: 'none' }}>
+          <Html key={b.name} position={[b.x, b.h + m(6), b.z]} center style={{ pointerEvents: 'none' }}>
             <div className="whitespace-nowrap rounded-md border border-white/70 bg-white/90 px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
               {b.name}
             </div>
@@ -2120,8 +2127,7 @@ function Scene({
   day,
   minute,
   nowF,
-  personScale,
-  setPersonScale,
+  onCamera,
 }: {
   world: World
   run: SimRun
@@ -2131,28 +2137,18 @@ function Scene({
   minute: number
   /** sim-relative fractional minutes — for smooth motion */
   nowF: number
-  /** figures grow as you zoom in, so a person is never an ant nor a monolith */
-  personScale: number
-  setPersonScale: (n: number) => void
+  onCamera?: (camera: THREE.Camera) => void
 }) {
   const { camera } = useThree()
-  const lastZoom = useRef(0)
-  const onZoom = (zoom: number) => setPersonScale(THREE.MathUtils.clamp(zoom * 0.013, 0.16, 1.6))
-
-  useFrame(() => {
-    const z = Math.round((camera as THREE.OrthographicCamera).zoom || 1)
-    if (z !== lastZoom.current) {
-      lastZoom.current = z
-      onZoom(z)
-    }
-  })
-
+  useEffect(() => {
+    onCamera?.(camera)
+  }, [camera, onCamera])
   const venue = world.event?.venue ?? 'arc'
   /* ponytail: tokens follow the run's queue across stops, capped so the map stays readable */
   // whoever is within 14 units of the view centre gets a real figure
   const focus: [number, number] = [-30.6, -46.2]
   const near = agents
-    .filter((a) => a.state !== 'ride' && Math.hypot(a.x - focus[0], a.z - focus[1]) < 14)
+    .filter((a) => a.state !== 'ride' && Math.hypot(a.x - focus[0], a.z - focus[1]) < m(45))
     .slice(0, 26)
   const nearIds = new Set(near.map((a) => a.id))
 
@@ -2197,14 +2193,14 @@ function Scene({
       })}
 
       {/* near the camera you get people; further out, crowd tokens */}
-      <Crowd agents={agents} size={personScale} minute={nowF} skip={nearIds} />
+      <Crowd agents={agents} size={m(1.75)} minute={nowF} skip={nearIds} />
       {near.map((a) => {
         const f = nowF - Math.floor(nowF)
         const x = a.px + (a.x - a.px) * f
         const z = a.pz + (a.z - a.pz) * f
         return (
           <group key={a.id} position={[x, 0, z]}>
-            <Person shirt={a.colour} skin="#e0b394" scale={personScale * 1.1} />
+            <Person shirt={a.colour} skin="#e0b394" scale={m(1.75)} />
           </group>
         )
       })}
@@ -2264,7 +2260,6 @@ export default function App() {
   const [eventOn, setEventOn] = useState(true)
   const [closedStops, setClosedStops] = useState<StopKey[]>([])
   const [serviceAdj, setServiceAdj] = useState<Record<string, number>>({})
-  const [personScale, setPersonScale] = useState(0.55)
   const [dayNoise, setDayNoise] = useState(1) // 0 = means only, 1 = a real day
   const [observed, setObserved] = useState('')
   const [seed, setSeed] = useState(7)
@@ -2273,6 +2268,9 @@ export default function App() {
   const [customs, setCustoms] = useState<Preset[]>([])
   const [simMin, setSimMin] = useState(30)
   const [speed, setSpeed] = useState(4)
+  /** live orthographic zoom, surfaced as a scale bar so the scale is never in doubt */
+  const [zoomNow, setZoomNow] = useState(120)
+  const controls = useRef<any>(null)
   const [running, setRunning] = useState(true)
   const [date, setDate] = useState<string>(saved?.date ?? '2026-10-19')
   const day = bandOf(date) // derived, never independent of the calendar
@@ -2478,7 +2476,7 @@ export default function App() {
       <Canvas
         orthographic
         dpr={1}
-        camera={{ position: [40, 36, 40], zoom: 70, near: -600, far: 900 }}
+        camera={{ position: [40, 36, 40], zoom: 120, near: -600, far: 900 }}
         gl={{ antialias: true }}
         className="absolute inset-0"
       >
@@ -2489,8 +2487,7 @@ export default function App() {
           day={day}
           minute={minute}
           nowF={simMin}
-          personScale={personScale}
-          setPersonScale={setPersonScale}
+          onCamera={(c) => ((window as unknown as { __cam: unknown }).__cam = c)}
         />
         <OrbitControls
           makeDefault
@@ -2501,8 +2498,14 @@ export default function App() {
           enableDamping
           dampingFactor={0.12}
           mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
-          minZoom={4}
-          maxZoom={90}
+          ref={controls}
+          onChange={() => {
+            const z = controls.current?.object?.zoom
+            if (z && Math.abs(z - zoomNow) > 0.5) setZoomNow(z)
+          }}
+          zoomSpeed={2}
+          minZoom={6}
+          maxZoom={1400}
         />
       </Canvas>
 
@@ -2518,6 +2521,13 @@ export default function App() {
                 sim
               </span>
               <span className="text-[9px] text-slate-400">roads {roads.length}</span>
+              <span
+                className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-slate-600"
+                title="width of the viewport in metres — 1 unit = 50 m"
+              >
+                {Math.round(((typeof window === 'undefined' ? 1280 : window.innerWidth) / zoomNow) * 50)} m
+                across
+              </span>
             </div>
             <p className="text-[11px] text-slate-500">
               Powered by Verizon Mobile Edge Compute · simulated telemetry

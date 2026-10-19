@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 const CENTER = [40.5028, -74.447]
 const M_PER_UNIT = 50
@@ -30,3 +31,25 @@ assert.ok(arc[1] < -40, 'Busch must be north of the origin')
 assert.ok(cook[1] > 40, 'Cook must be south of the origin')
 
 console.log('layout ok')
+
+/* --- scale: every entity must be sized in real metres --- */
+const m = (metres) => metres / M_PER_UNIT
+const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+
+function assertNear(name, got, want, tol) {
+  if (Math.abs(got - want) > tol) throw new Error(`${name}: got ${got}, want ${want}`)
+  console.log(`scale ${name} ok (${got})`)
+}
+
+// a person is 1.75 m
+assertNear('person m', m(1.75) * M_PER_UNIT, 1.75, 0.01)
+// a bus is 12 m: body is 2.1 model units wide
+assertNear('bus m', (m(12) / 2.1) * 2.1 * M_PER_UNIT, 12, 0.01)
+// roads are real widths
+assertNear('residential road m', m(8) * M_PER_UNIT, 8, 0.01)
+// building storeys are 3.6 m
+assertNear('storey m', m(3.6) * M_PER_UNIT, 3.6, 0.01)
+for (const bad of ['floors * 0.18', 'scale={2.2}', 'zoom: 70']) {
+  if (app.includes(bad)) throw new Error(`exaggerated sizing came back: ${bad}`)
+}
+console.log('scale ok')
