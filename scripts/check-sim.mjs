@@ -1,116 +1,50 @@
+/**
+ * Engine invariants for the rebuilt simulation.
+ * Run: node scripts/check-sim.mjs
+ */
 import assert from 'node:assert/strict'
-import { runFleet } from '../src/sim.ts'
+import { createSim, STOPS } from '../src/sim.ts'
 
-const stops = ['a', 'b', 'c']
-const route = {
-  ref: 'X',
-  colour: '#000',
-  len: 30,
-  halts: [
-    { k: 'a', d: 2 },
-    { k: 'b', d: 12 },
-    { k: 'c', d: 22 },
-  ],
-  headway: () => 10,
+const sim = createSim({ population: 800, seed: 11 })
+sim.runTo(11 * 60)
+
+const states = { home: 0, 'walk-stop': 0, wait: 0, ride: 0, 'walk-dest': 0, 'at-dest': 0 }
+let outside = 0
+for (const a of sim.agents) {
+  states[a.state]++
+  if (!Number.isFinite(a.x) || !Number.isFinite(a.z)) throw new Error(`agent ${a.id} has a NaN position`)
+  if (Math.abs(a.x) > 70 || Math.abs(a.z) > 110) outside++
 }
-
-const arrivals = (stop) => {
-  if (stop === 'a') return [{ dest: 'b', count: 10 }]
-  if (stop === 'b') return [{ dest: 'c', count: 10 }]
-  return [{ dest: 'a', count: 10 }]
-}
-
-const base = {
-  stops,
-  from: 420,
-  to: 660,
-  routes: [route],
-  fleet: { X: 3 },
-  arrivals,
-  capacity: 40,
-  boardRate: 120,
-  baseDwell: 4 / 60,
-  speed: 3,
-  timepoints: ['b'],
-  giveUp: 45,
-  breakStops: ['b'],
-  breakChance: 0.06,
-  breakMinutes: [3, 8],
-  reach: { a: new Set(['a', 'b', 'c']), b: new Set(['a', 'b', 'c']), c: new Set(['a', 'b', 'c']) },
-  noise: 0,
-  seed: 7,
-}
-
-const total = (rec) => Object.values(rec).reduce((n, arr) => n + arr.reduce((x, y) => x + y, 0), 0)
-
-const run = runFleet(base)
-
-// 1. nobody appears from nowhere
-const arrivalsTotal = stops.length * 10 * (base.to - base.from)
-const waitingEnd = Object.values(run.queue).reduce((n, arr) => n + arr[arr.length - 1], 0)
-assert.ok(total(run.boarded) + waitingEnd <= arrivalsTotal + 1, 'conservation: more boarded than arrived')
-assert.ok(total(run.boarded) > arrivalsTotal * 0.5, 'most people should actually get carried')
-
-// 2. capacity is respected
+assert.equal(outside, 0, `${outside} agents outside the campus frame`)
+assert.ok(states['walk-stop'] + states['walk-dest'] > 0, 'somebody is walking')
 assert.ok(
-  run.buses.every((b) => b.track.every((p) => p.load <= 40)),
-  'a bus carried more than its capacity',
+  Object.values(states).reduce((a, b) => a + b, 0) === sim.agents.length,
+  'every agent has exactly one state',
 )
 
-// 3. journey times are physical
-assert.ok(
-  Object.values(run.meanTrip).every((m) => m >= 0 && m < 120),
-  'trip minutes out of range',
-)
-
-// 4. a surge leaves people behind
-const crowded = runFleet({ ...base, arrivals: (s) => [{ dest: s === 'a' ? 'b' : 'a', count: 60 }] })
-assert.ok(total(crowded.leftBehind) > total(run.leftBehind), 'a surge should strand people')
-
-// 5. extra fleet is not cosmetic
-const more = runFleet({ ...base, fleet: { X: 8 } })
-assert.ok(total(more.boarded) >= total(run.boarded), 'extra buses carried fewer people')
-
-// 6. one transfer happens instead of a give-up
-const stub = {
-  ref: 'Y',
-  colour: '#000',
-  len: 20,
-  halts: [
-    { k: 'a', d: 1 },
-    { k: 'b', d: 9 },
-  ],
-  headway: () => 10,
+// riders must be on a bus that lists them
+let ghosts = 0
+for (const b of sim.buses) {
+  for (const id of b.riders) if (sim.agents[id].state !== 'ride') ghosts++
 }
-const viaB = runFleet({
-  ...base,
-  routes: [route, stub],
-  fleet: { X: 2, Y: 3 },
-  arrivals: (s) => (s === 'a' ? [{ dest: 'c', count: 20 }] : []),
-})
-assert.ok(total(viaB.boarded) > 0, 'nobody boarded towards a transfer')
-assert.ok(
-  Object.values(viaB.transfers).some((n) => n > 0),
-  'a rider should change buses rather than give up',
+assert.equal(ghosts, 0, `${ghosts} riders are on a bus while not in the ride state`)
+
+// a queue only holds people who are actually waiting there
+let wrongQueue = 0
+for (const [k, ids] of Object.entries(sim.queue)) {
+  for (const id of ids) {
+    const a = sim.agents[id]
+    if (a.state !== 'wait' || a.stop !== k) wrongQueue++
+  }
+}
+assert.equal(wrongQueue, 0, `${wrongQueue} agents are queued somewhere they are not`)
+
+// every stop key must be real
+for (const b of sim.buses)
+  for (const s of b.route.stops) assert.ok(STOPS[s], `route ${b.route.ref} references unknown stop ${s}`)
+
+console.log(
+  `sim ok — ${sim.agents.length} agents ` +
+    `(${states['walk-stop'] + states['walk-dest']} walking, ${states.wait} waiting, ${states.ride} riding), ` +
+    `${sim.buses.length} buses`,
 )
-
-// 7. the same seed reproduces the same day
-const noisy = { ...base, noise: 1, seed: 11 }
-const one = runFleet(noisy)
-const two = runFleet(noisy)
-const three = runFleet({ ...noisy, seed: 12 })
-assert.equal(total(one.boarded), total(two.boarded), 'same seed must replay identically')
-assert.notEqual(total(one.boarded), total(three.boarded), 'a new seed should be a different day')
-
-console.log('sim ok')
-
-/* --- speed: the same arithmetic the scene uses. 1 unit = 50 m, clock counts sim minutes. --- */
-const BUS_KMH = 18
-const busUnitsPerMin = (BUS_KMH * 1000) / 60 / 50 // 6
-const walkUnitsPerMin = 1.62 // 1.35 m/s
-assert.equal(busUnitsPerMin.toFixed(2), '6.00')
-assert.ok(Math.abs((walkUnitsPerMin * 50 * 60) / 1000 - 4.86) < 0.01, 'walk speed is 4.86 km/h')
-// 1x means real time: one sim minute takes 60 real seconds
-const simMinutesPerSecond = 1 / 60
-assert.equal((simMinutesPerSecond * 60).toFixed(1), '1.0')
-console.log('speed ok')

@@ -45,14 +45,4 @@ const east = warp(10 * pxPerM, 0)
 assert.ok(Math.abs(east.x - origin.x - 10) < 1e-9, 'image +x is east')
 assert.ok(Math.abs(east.y - origin.y - 5) < 1e-9, 'image +x drops half a metre per metre')
 
-// a 2:1 plane needs sin(elevation) = 0.5, i.e. 30 degrees. The camera sits at
-// (60, 49, 60), so its direction is (0.6124, 0.5, 0.6124) and sin(theta) = 0.5.
-const dir = [60, 49, 60]
-const theta = Math.atan2(dir[1], Math.hypot(dir[0], dir[2]))
-const ratio = Math.sin(theta)
-assert.ok(
-  Math.abs(ratio - 0.5) < 0.005,
-  `vertical scale ratio ${ratio.toFixed(3)} must be 0.5 for a 2:1 plane`,
-)
-
-console.log('iso ok — 2:1 dimetric, round-trips, ground warp, 26.57° elevation')
+console.log('iso ok — projection round-trips and the ground warp is consistent')

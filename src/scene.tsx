@@ -268,6 +268,10 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
         </mesh>
         <mesh position={[0, 0.66, 0]}>
           <boxGeometry args={[2.02, 0.06, 0.78]} />
+          <meshStandardMaterial color="#b3002d" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.7, 0]}>
+          <boxGeometry args={[1.98, 0.02, 0.18]} />
           <meshStandardMaterial color="#f8f8f6" roughness={0.7} />
         </mesh>
         <mesh position={[0, 0.3, 0]}>
@@ -335,16 +339,19 @@ function atDistance(bus: Bus, distance: number): [number, number] {
  * a painted figure reads at 8 px, a capsule does not.
  */
 function People({ agents, clock }: { agents: Agent[]; clock: { t: number } }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
   const tex = useMemo(() => figureTextures(), [])
   const refs = useRef<(THREE.InstancedMesh | null)[]>([])
   const dummy = useMemo(() => new THREE.Object3D(), [])
-  const H = m(1.75)
-  const W = H * FIGURE_ASPECT
-
   useFrame(() => {
     const f = clock.t - Math.floor(clock.t)
     const stride = Math.floor(clock.t * 8) % 2
+    // true scale when you're close, a legible 8 px minimum when you're not:
+    // a 1.75 m person is 3 px at campus zoom, which reads as nothing at all
+    const zoom = (camera as THREE.OrthographicCamera).zoom || 1
+    const unitsAcross = size.height / zoom
+    const H = Math.max(m(1.75), unitsAcross * 0.017)
+    const W = H * FIGURE_ASPECT
     const buckets: Agent[][] = Array.from({ length: VARIANTS * POSES.length }, () => [])
     for (const a of agents) {
       if (a.state === 'ride') continue
@@ -463,6 +470,16 @@ export function Scene({
   useEffect(() => {
     onCamera?.(camera)
   }, [camera, onCamera])
+
+  // map view: straight down, north up. OrbitControls keeps pan and zoom but never
+  // tilts, so the scene reads as a plan rather than an oblique 3D shot.
+  useEffect(() => {
+    const t = STOPS[focus].at
+    camera.up.set(0, 0, -1)
+    camera.position.set(t[0], 300, t[1])
+    camera.lookAt(t[0], 0, t[1])
+    ;(camera as THREE.OrthographicCamera).updateProjectionMatrix()
+  }, [camera, focus])
 
   useFrame((_, dt) => {
     clock.t += (Math.min(0.25, dt) * speed) / 60

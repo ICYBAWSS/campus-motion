@@ -6,13 +6,13 @@ import { createSim } from './sim'
 
 export default function App() {
   const [running, setRunning] = useState(true)
-  const [speed, setSpeed] = useState(1)
+  const [speed, setSpeed] = useState(10)
   const [, setFrame] = useState(0)
 
   // one simulation for the session; the scene advances it on the frame clock
   const simRef = useRef<ReturnType<typeof createSim> | null>(null)
   if (!simRef.current) {
-    simRef.current = createSim({ population: 600, seed: 7 })
+    simRef.current = createSim({ population: 6000, seed: 7 })
     simRef.current.runTo(9 * 60) // open at 09:00 with the day already under way
   }
   const sim = simRef.current
@@ -43,7 +43,7 @@ export default function App() {
       <Canvas
         orthographic
         dpr={1}
-        camera={{ position: [60, 49, 60], zoom: 80, near: -2000, far: 4000 }}
+        camera={{ position: [0.001, 120, 0], zoom: 200, near: -2000, far: 4000 }}
         gl={{ antialias: true }}
         className="absolute inset-0"
       >

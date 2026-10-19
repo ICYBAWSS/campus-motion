@@ -7,6 +7,7 @@
 import stopsData from './data/stops.json' with { type: 'json' }
 import routesData from './data/routes.json' with { type: 'json' }
 import pathsData from './data/paths.json' with { type: 'json' }
+import placesData from './data/places.json' with { type: 'json' }
 import { pathLength, samplePath, walkRoute, type P } from './network.ts'
 
 export type StopKey = keyof typeof stopsData
@@ -119,6 +120,8 @@ export type Agent = {
   /** minutes spent in the current state */
   since: number
   bus: number
+  /** the stop they alight at */
+  destStop: string
   /** time they must be at their destination */
   due: number
 }
@@ -155,16 +158,19 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
   const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length) % xs.length]
 
   const stopKeys = Object.keys(STOPS)
+  const places = placesData as unknown as { x: number; z: number; s: string }[]
   const carriers = ROUTES.filter((r) => r.stops.length >= 2)
 
   /* ---------------- agents ---------------- */
   const agents: Agent[] = []
   for (let i = 0; i < population; i++) {
-    const homeKey = pick(stopKeys)
-    const home = STOPS[homeKey].at
-    // most people start the day at home and go to exactly one place, then come back
-    const destKey = rand() < 0.55 ? homeKey : pick(stopKeys)
-    const dest = STOPS[destKey].at
+    const from = places.length ? pick(places) : { x: 0, z: 0, s: pick(stopKeys) }
+    const home: [number, number] = [from.x, from.z]
+    const homeKey = from.s
+    // most people leave home once and come back; the rest stay put
+    const to = places.length && rand() >= 0.25 ? pick(places) : from
+    const dest: [number, number] = [to.x, to.z]
+    const destKey = to.s
     agents.push({
       id: i,
       state: 'home',
@@ -176,10 +182,13 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
       home,
       dest,
       stop: homeKey,
+      destStop: destKey,
       leg: null,
       since: START,
       bus: -1,
-      due: START + 30 + Math.floor(rand() * 300),
+      // two waves: the morning rush and the evening one, so the campus is never
+      // empty and never uniformly busy
+      due: START + (rand() < 0.65 ? 45 + Math.floor(rand() * 90) : 540 + Math.floor(rand() * 150)),
     })
   }
 
@@ -244,7 +253,7 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
         const staying: number[] = []
         for (const id of b.riders) {
           const a = agents[id]
-          if (a.dest === STOPS[key].at) {
+          if (a.destStop === key) {
             a.state = 'walk-dest'
             a.since = t
             a.bus = -1
@@ -256,11 +265,10 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
         b.riders = staying
         // on: anyone waiting here whose destination is served by this route
         const wants = queue[key]
-        const served = new Set(b.route.stops.map((s) => STOPS[s].at.join(',')))
         const keep: number[] = []
         for (const id of wants) {
           const a = agents[id]
-          const ok = b.riders.length < CAPACITY && served.has(a.dest.join(','))
+          const ok = b.riders.length < CAPACITY && b.route.stops.includes(a.destStop)
           if (ok) {
             a.state = 'ride'
             a.bus = buses.indexOf(b)
@@ -281,16 +289,9 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
       switch (a.state) {
         case 'home': {
           if (t < a.due - 40) break
-          const stopKey = stopKeys.reduce((best, k) =>
-            Math.hypot(STOPS[k].at[0] - a.dest[0], STOPS[k].at[1] - a.dest[1]) <
-            Math.hypot(STOPS[best].at[0] - a.dest[0], STOPS[best].at[1] - a.dest[1])
-              ? k
-              : best,
-          )
-          a.stop = stopKey
           a.state = 'walk-stop'
           a.since = t
-          a.leg = walkLeg([a.x, a.z], STOPS[stopKey].at, t)
+          a.leg = walkLeg([a.x, a.z], STOPS[a.stop].at, t)
           break
         }
         case 'walk-stop':
