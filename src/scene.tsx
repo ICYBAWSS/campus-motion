@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import NET from './network.json'
-import { BUS_SPEED, CAPACITY, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
+import { BUS_SPEED, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
 import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
 const M = 50
@@ -230,7 +230,7 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
     const dz = p1[1] - p0[1]
     if (dx || dz) node.rotation.y = Math.atan2(-dz, dx)
   })
-  const load = bus.riders.length / CAPACITY
+  const load = bus.riders.length / bus.capacity
   return (
     <group ref={g}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]} renderOrder={2}>

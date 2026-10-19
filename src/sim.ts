@@ -81,7 +81,14 @@ export const ROUTES: Route[] = (routesData as unknown as { ref: string; stops: s
 /* ------------------------------------------------------------------ */
 export const BUS_SPEED = 6 // units/min = 18 km/h
 export const WALK_SPEED = 1.62 // units/min = 4.86 km/h
-export const CAPACITY = 60
+/**
+ * Rutgers buses seat about 44 and stand to roughly 77 total. Each vehicle draws
+ * its own figure from this band so a mixed fleet behaves like a real one — some
+ * buses fill early and leave people behind, others take the overflow.
+ */
+export const CAPACITY_MIN = 70
+export const CAPACITY_MAX = 84
+export const CAPACITY = 77 // nominal, for thresholds and labels
 export const DWELL = 0.4 // minutes at each stop
 export const START = 7 * 60 // 07:00
 
@@ -136,6 +143,8 @@ export type Bus = {
   pz: number
   dwell: number
   riders: number[]
+  /** this vehicle's own legal load, drawn once at spawn */
+  capacity: number
   /** next stop index this bus will serve */
   next: number
 }
@@ -201,7 +210,18 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
     for (let k = 0; k < n; k++) {
       const d = (route.len * k) / n
       const p = samplePath(route.path, d / route.len)
-      buses.push({ route, d, x: p[0], z: p[1], px: p[0], pz: p[1], dwell: 0, riders: [], next: 0 })
+      buses.push({
+        route,
+        d,
+        x: p[0],
+        z: p[1],
+        px: p[0],
+        pz: p[1],
+        dwell: 0,
+        riders: [],
+        capacity: CAPACITY_MIN + Math.floor(rand() * (CAPACITY_MAX - CAPACITY_MIN + 1)),
+        next: 0,
+      })
     }
   }
 
@@ -268,7 +288,7 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
         const keep: number[] = []
         for (const id of wants) {
           const a = agents[id]
-          const ok = b.riders.length < CAPACITY && b.route.stops.includes(a.destStop)
+          const ok = b.riders.length < b.capacity && b.route.stops.includes(a.destStop)
           if (ok) {
             a.state = 'ride'
             a.bus = buses.indexOf(b)

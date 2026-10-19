@@ -3,7 +3,7 @@
  * Run: node scripts/check-sim.mjs
  */
 import assert from 'node:assert/strict'
-import { createSim, STOPS } from '../src/sim.ts'
+import { CAPACITY_MAX, CAPACITY_MIN, createSim, STOPS } from '../src/sim.ts'
 
 const sim = createSim({ population: 800, seed: 11 })
 sim.runTo(11 * 60)
@@ -43,8 +43,14 @@ assert.equal(wrongQueue, 0, `${wrongQueue} agents are queued somewhere they are 
 for (const b of sim.buses)
   for (const s of b.route.stops) assert.ok(STOPS[s], `route ${b.route.ref} references unknown stop ${s}`)
 
+// each bus carries its own legal load, drawn from the real standing-room band
+const caps = sim.buses.map((b) => b.capacity)
+for (const c of caps) assert.ok(c >= CAPACITY_MIN && c <= CAPACITY_MAX, `capacity ${c} outside ${CAPACITY_MIN}-${CAPACITY_MAX}`)
+assert.ok(new Set(caps).size > 3, 'the fleet is not one uniform vehicle')
+for (const b of sim.buses) assert.ok(b.riders.length <= b.capacity, `bus ${b.route.ref} over capacity`)
+
 console.log(
   `sim ok — ${sim.agents.length} agents ` +
     `(${states['walk-stop'] + states['walk-dest']} walking, ${states.wait} waiting, ${states.ride} riding), ` +
-    `${sim.buses.length} buses`,
+    `${sim.buses.length} buses, capacity ${Math.min(...caps)}-${Math.max(...caps)}`,
 )

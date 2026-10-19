@@ -125,7 +125,7 @@ export function Panels({
             </div>
           </dl>
           <p className="mt-2 text-[10px] leading-snug text-slate-400">
-            {ROUTES.length} routes · capacity {CAPACITY} per bus · modelled, not measured
+            {ROUTES.length} routes · capacity ~{CAPACITY} per bus (randomised) · modelled, not measured
           </p>
         </section>
       </aside>
