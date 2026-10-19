@@ -1741,7 +1741,10 @@ const NODES: { name: string; key: StopKey }[] = [
 /** ponytail: ~20x oversized so people read at 50 m/unit; zoom to maxZoom 40 for figures */
 
 /** one figure. Static stance, animated by whatever group carries it — 120 of these must not each own a frame callback. */
-/** a bus, driven by the run's own positions rather than by a frame-rate guess */
+/**
+ * A Rutgers bus: white body, scarlet band, glazed windows on both sides, four wheels.
+ * Position comes from the simulation; nothing here is decorative.
+ */
 function Bus({
   route,
   track,
@@ -1763,33 +1766,105 @@ function Bus({
     const f = wrap ? 0 : (minute - a.t) / Math.max(0.001, b.t - a.t)
     const d = wrap ? a.d : a.d + (b.d - a.d) * Math.max(0, Math.min(1, f))
     const p = samplePath(route.path, route.len, d)
-    node.position.set(p.x, 0.1, p.z)
+    node.position.set(p.x, 0.12, p.z)
     node.rotation.y = p.rot
   })
 
+  const wheels: [number, number][] = [
+    [-0.72, -0.42],
+    [-0.72, 0.42],
+    [0.72, -0.42],
+    [0.72, 0.42],
+  ]
+
   return (
     <group ref={g}>
-      <group scale={2.6}>
-        <mesh position={[0, 0.12, 0]}>
-          <boxGeometry args={[0.62, 0.16, 0.24]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.5} />
+      <group scale={2.2}>
+        {/* body */}
+        <mesh position={[0, 0.42, 0]}>
+          <boxGeometry args={[2.1, 0.44, 0.86]} />
+          <meshStandardMaterial color="#f7f7f5" roughness={0.55} />
         </mesh>
-        <mesh position={[0, 0.24, 0]}>
-          <boxGeometry args={[0.62, 0.12, 0.25]} />
-          <meshStandardMaterial color={route.colour} roughness={0.45} />
+        {/* scarlet band, the only Rutgers colour that matters */}
+        <mesh position={[0, 0.3, 0]}>
+          <boxGeometry args={[2.12, 0.16, 0.88]} />
+          <meshStandardMaterial color="#cc0033" roughness={0.6} />
         </mesh>
-        <mesh position={[0, 0.2, 0]}>
-          <boxGeometry args={[0.5, 0.08, 0.26]} />
-          <meshStandardMaterial color="#93c5d8" roughness={0.15} metalness={0.35} />
+        {/* windows: dark glass on both flanks */}
+        {[-1, 1].map((side) => (
+          <mesh key={side} position={[0, 0.5, side * 0.435]}>
+            <boxGeometry args={[1.82, 0.2, 0.02]} />
+            <meshStandardMaterial color="#1f2a37" roughness={0.15} metalness={0.5} />
+          </mesh>
+        ))}
+        {/* windscreen and rear glass */}
+        {[-1, 1].map((end2) => (
+          <mesh key={end2} position={[end2 * 1.045, 0.5, 0]}>
+            <boxGeometry args={[0.02, 0.2, 0.74]} />
+            <meshStandardMaterial color="#1f2a37" roughness={0.15} metalness={0.5} />
+          </mesh>
+        ))}
+        {/* roof detail so the top does not read as a floating slab */}
+        <mesh position={[0, 0.66, 0]}>
+          <boxGeometry args={[1.6, 0.05, 0.6]} />
+          <meshStandardMaterial color="#e5e7eb" roughness={0.7} />
         </mesh>
+        {wheels.map(([x, z], i) => (
+          <mesh key={i} position={[x, 0.13, z]} rotation-x={Math.PI / 2}>
+            <cylinderGeometry args={[0.13, 0.13, 0.1, 14]} />
+            <meshStandardMaterial color="#111827" roughness={0.9} />
+          </mesh>
+        ))}
       </group>
+    </group>
+  )
+}
+
+/** the near-field figure: head, torso, arms, legs. Capsules are for crowds at distance. */
+function Person({ shirt, skin, scale = 0.5 }: { shirt: string; skin: string; scale?: number }) {
+  return (
+    <group scale={scale}>
+      <mesh position={[-0.075, 0.28, 0]} rotation-x={0.22}>
+        <capsuleGeometry args={[0.055, 0.22, 2, 6]} />
+        <meshStandardMaterial color="#334155" roughness={0.9} />
+      </mesh>
+      <mesh position={[0.075, 0.28, 0]} rotation-x={-0.22}>
+        <capsuleGeometry args={[0.055, 0.22, 2, 6]} />
+        <meshStandardMaterial color="#334155" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.6, 0]}>
+        <capsuleGeometry args={[0.13, 0.24, 3, 8]} />
+        <meshStandardMaterial color={shirt} roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 0.88, 0]}>
+        <sphereGeometry args={[0.1, 10, 10]} />
+        <meshStandardMaterial color={skin} roughness={0.7} />
+      </mesh>
+      <mesh position={[-0.18, 0.62, 0]} rotation-z={0.16}>
+        <capsuleGeometry args={[0.038, 0.18, 2, 6]} />
+        <meshStandardMaterial color={shirt} roughness={0.85} />
+      </mesh>
+      <mesh position={[0.18, 0.62, 0]} rotation-z={-0.16}>
+        <capsuleGeometry args={[0.038, 0.18, 2, 6]} />
+        <meshStandardMaterial color={shirt} roughness={0.85} />
+      </mesh>
     </group>
   )
 }
 
 /** every agent, one draw call. Riders are hidden inside the bus they are on. */
 /** every agent, one draw call, interpolated between the last two simulated minutes */
-function Crowd({ agents, size, minute }: { agents: SimAgent[]; size: number; minute: number }) {
+function Crowd({
+  agents,
+  size,
+  minute,
+  skip,
+}: {
+  agents: SimAgent[]
+  size: number
+  minute: number
+  skip: Set<number>
+}) {
   const ref = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const colour = useMemo(() => new THREE.Color(), [])
@@ -1800,7 +1875,7 @@ function Crowd({ agents, size, minute }: { agents: SimAgent[]; size: number; min
     if (!mesh) return
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]
-      const shown = a.state !== 'ride'
+      const shown = a.state !== 'ride' && !skip.has(a.id)
       const x = a.px + (a.x - a.px) * f
       const z = a.pz + (a.z - a.pz) * f
       dummy.position.set(x, shown ? size * 0.5 : -80, z)
@@ -2074,6 +2149,13 @@ function Scene({
 
   const venue = world.event?.venue ?? 'arc'
   /* ponytail: tokens follow the run's queue across stops, capped so the map stays readable */
+  // whoever is within 14 units of the view centre gets a real figure
+  const focus: [number, number] = [-30.6, -46.2]
+  const near = agents
+    .filter((a) => a.state !== 'ride' && Math.hypot(a.x - focus[0], a.z - focus[1]) < 14)
+    .slice(0, 26)
+  const nearIds = new Set(near.map((a) => a.id))
+
   return (
     <>
       <color attach="background" args={['#bfe0f5']} />
@@ -2114,8 +2196,18 @@ function Scene({
         return <Bus key={`${b.ref}-${i}`} route={route} track={b.track} minute={nowF} />
       })}
 
-      {/* the crowd is the simulation: every figure below is an agent with somewhere to be */}
-      <Crowd agents={agents} size={personScale} minute={nowF} />
+      {/* near the camera you get people; further out, crowd tokens */}
+      <Crowd agents={agents} size={personScale} minute={nowF} skip={nearIds} />
+      {near.map((a) => {
+        const f = nowF - Math.floor(nowF)
+        const x = a.px + (a.x - a.px) * f
+        const z = a.pz + (a.z - a.pz) * f
+        return (
+          <group key={a.id} position={[x, 0, z]}>
+            <Person shirt={a.colour} skin="#e0b394" scale={personScale * 1.1} />
+          </group>
+        )
+      })}
     </>
   )
 }
