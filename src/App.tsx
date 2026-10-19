@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import roads from './roads.json'
+import ROUTE_PATHS from './route-paths.json'
+import NETWORK from './network.json'
 import type { Group as ThreeGroup } from 'three'
 import {
   createSim,
@@ -268,7 +269,9 @@ const makeRouteFromStops = (
   stops: StopKey[],
   bands: Record<string, [number, number, number][]>,
 ) => {
-  const path = stops.map((k) => STOPS[k].at)
+  // real road geometry from scripts/build-network.mjs (A* over the OSM graph);
+  // ponytail: routes the builder could not parse (EE, F) fall back to straight stops
+  const path = (ROUTE_PATHS as unknown as Record<string, Vec2[]>)[ref] ?? stops.map((k) => STOPS[k].at)
   return {
     ref,
     colour,
@@ -2007,9 +2010,19 @@ const ROAD_WIDTH: Record<string, number> = {
   unclassified: m(8),
   living_street: m(6),
   service: m(5.5),
+  footway: m(2.4),
+  path: m(2),
+  pedestrian: m(6),
+  steps: m(2),
+  cycleway: m(2.4),
 }
 
 const ROAD_COLOUR: Record<string, number[]> = {
+  footway: [0.82, 0.8, 0.76],
+  path: [0.84, 0.82, 0.78],
+  pedestrian: [0.85, 0.83, 0.79],
+  steps: [0.8, 0.78, 0.74],
+  cycleway: [0.7, 0.76, 0.7],
   motorway: [0.42, 0.44, 0.47],
   trunk: [0.42, 0.44, 0.47],
   primary: [0.47, 0.49, 0.52],
@@ -2022,43 +2035,43 @@ const ROAD_COLOUR: Record<string, number[]> = {
 }
 
 function Roads() {
+  /* One buffer for the whole network, built from the same graph the bus routes are
+     computed on — so a route can never run where no road is drawn. */
   const geom = useMemo(() => {
     const pos: number[] = []
     const col: number[] = []
-    for (const way of roads as { c: string; p: number[][] }[]) {
-      const w = (ROAD_WIDTH[way.c] ?? 0.3) / 2
-      const c = ROAD_COLOUR[way.c] ?? [0.65, 0.66, 0.68]
-      for (let i = 0; i < way.p.length - 1; i++) {
-        const [x1, z1] = way.p[i]
-        const [x2, z2] = way.p[i + 1]
-        const dx = x2 - x1
-        const dz = z2 - z1
-        const len = Math.hypot(dx, dz) || 1
-        const nx = (-dz / len) * w
-        const nz = (dx / len) * w
-        // two triangles per segment
-        pos.push(
-          x1 + nx,
-          0,
-          z1 + nz,
-          x1 - nx,
-          0,
-          z1 - nz,
-          x2 + nx,
-          0,
-          z2 + nz,
-          x2 + nx,
-          0,
-          z2 + nz,
-          x1 - nx,
-          0,
-          z1 - nz,
-          x2 - nx,
-          0,
-          z2 - nz,
-        )
-        for (let k = 0; k < 6; k++) col.push(c[0], c[1], c[2])
-      }
+    const net = NETWORK as unknown as { edges: { a: number[]; b: number[]; kind: string }[] }
+    for (const e of net.edges) {
+      const [x1, z1] = e.a as [number, number]
+      const [x2, z2] = e.b as [number, number]
+      const dx = x2 - x1
+      const dz = z2 - z1
+      const len = Math.hypot(dx, dz) || 1
+      const w = (ROAD_WIDTH[e.kind] ?? m(5.5)) / 2
+      const nx = (-dz / len) * w
+      const nz = (dx / len) * w
+      const c = ROAD_COLOUR[e.kind] ?? [0.66, 0.67, 0.69]
+      pos.push(
+        x1 + nx,
+        0,
+        z1 + nz,
+        x1 - nx,
+        0,
+        z1 - nz,
+        x2 + nx,
+        0,
+        z2 + nz,
+        x2 + nx,
+        0,
+        z2 + nz,
+        x1 - nx,
+        0,
+        z1 - nz,
+        x2 - nx,
+        0,
+        z2 - nz,
+      )
+      for (let k = 0; k < 6; k++) col.push(c[0], c[1], c[2])
     }
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -2068,13 +2081,12 @@ function Roads() {
   }, [])
 
   return (
-    <mesh geometry={geom} position={[0, 0.06, 0]}>
+    <mesh geometry={geom} position={[0, 0.02, 0]}>
       <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
     </mesh>
   )
 }
 
-/** every building and parking lot in one instanced draw call */
 function Buildings({ data }: { data: CampusBuilding[] }) {
   const ref = useRef<THREE.InstancedMesh>(null)
 
@@ -2547,7 +2559,9 @@ export default function App() {
               <span className="rounded-full bg-[#ee0000] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-white">
                 sim
               </span>
-              <span className="text-[9px] text-slate-400">roads {roads.length}</span>
+              <span className="text-[9px] text-slate-400">
+                roads {(NETWORK as unknown as { edges: unknown[] }).edges.length}
+              </span>
               <span
                 className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-slate-600"
                 title="width of the viewport in metres — 1 unit = 50 m"
