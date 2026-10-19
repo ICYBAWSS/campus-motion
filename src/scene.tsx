@@ -124,7 +124,10 @@ function SatelliteGround() {
   const w = SAT_FRAME.x1 - SAT_FRAME.x0
   const h = SAT_FRAME.z1 - SAT_FRAME.z0
   return (
-    <mesh rotation-x={-Math.PI / 2} position={[(SAT_FRAME.x0 + SAT_FRAME.x1) / 2, -0.02, (SAT_FRAME.z0 + SAT_FRAME.z1) / 2]}>
+    <mesh
+      rotation-x={-Math.PI / 2}
+      position={[(SAT_FRAME.x0 + SAT_FRAME.x1) / 2, -0.02, (SAT_FRAME.z0 + SAT_FRAME.z1) / 2]}
+    >
       <planeGeometry args={[w, h]} />
       <meshBasicMaterial map={tex} toneMapped={false} />
     </mesh>

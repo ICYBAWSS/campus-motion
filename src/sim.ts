@@ -199,9 +199,12 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
   /* ---------------- the day ---------------- */
   const queue: Record<string, number[]> = {}
   const boardings: Record<string, number[]> = {}
+  /** people waiting at each stop, one sample per minute */
+  const history: Record<string, number[]> = {}
   for (const k of stopKeys) {
     queue[k] = []
     boardings[k] = []
+    history[k] = []
   }
 
   let minute = START
@@ -326,8 +329,8 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
       }
     }
 
-    for (const k of stopKeys) queue[k] = queue[k]
     for (const k of stopKeys) queue[k] = queue[k].filter((id) => agents[id].state === 'wait')
+    for (const k of stopKeys) history[k][t - START] = queue[k].length
 
     minute = t + 1
   }
@@ -337,6 +340,7 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
     buses,
     queue,
     boardings,
+    history,
     get minute() {
       return minute
     },

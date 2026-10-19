@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Line, LineChart, ReferenceLine, ResponsiveContainer, YAxis } from 'recharts'
 import { CAPACITY, ROUTES, STOPS, type Sim } from './sim'
 
@@ -27,13 +28,14 @@ export function Panels({
   const minute = Math.floor(clock.t)
   const stats = sim.stats()
   const queue = (k: string) => (sim.queue[k] ?? []).length
-  const peak = Math.max(...NODES.map(queue), 1)
   const busiest = NODES.reduce((a, b) => (queue(a) >= queue(b) ? a : b))
-  const series = Array.from({ length: 90 }, (_, i) => {
-    const at = minute - 89 + i
-    const idx = Math.max(0, Math.floor(at) - sim.minute + (sim.boardings.arc?.length ?? 0))
-    return { t: fmt(at), waiting: queue('arc'), boarded: sim.boardings.arc?.[Math.max(0, idx)] ?? 0 }
-  })
+  const [picked, setPicked] = useState<string | null>(null)
+  const watch = picked ?? busiest
+  const history = sim.history[watch] ?? []
+  const series = history
+    .slice(-90)
+    .map((waiting, i) => ({ t: fmt(minute - (Math.min(90, history.length) - 1 - i)), waiting }))
+  const peak = Math.max(1, ...series.map((p) => p.waiting))
 
   return (
     <>
@@ -133,7 +135,17 @@ export function Panels({
         <section className="rounded-2xl border border-white/60 bg-white/75 p-3 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
           <div className="mb-1 flex items-baseline justify-between">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Prediction</h2>
-            <span className="text-[10px] text-slate-400">{STOPS.arc.label}</span>
+            <select
+              value={watch}
+              onChange={(e) => setPicked(e.target.value)}
+              className="max-w-[9.5rem] rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] text-slate-600"
+            >
+              {NODES.map((k) => (
+                <option key={k} value={k}>
+                  {STOPS[k].label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="h-24">
             <ResponsiveContainer width="100%" height="100%">
@@ -151,7 +163,7 @@ export function Panels({
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <p className="mt-1 text-[10px] text-slate-400">waiting at {STOPS.arc.label} · last 90 min</p>
+          <p className="mt-1 text-[10px] text-slate-400">waiting at {STOPS[watch].label} · last 90 min</p>
         </section>
 
         <section
