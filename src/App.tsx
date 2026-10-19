@@ -43,7 +43,7 @@ export default function App() {
       <Canvas
         orthographic
         dpr={1}
-        camera={{ position: [0.001, 120, 0], zoom: 200, near: -2000, far: 4000 }}
+        camera={{ position: [0.001, 300, 0], zoom: 90, near: -2000, far: 4000 }}
         gl={{ antialias: true }}
         className="absolute inset-0"
       >
