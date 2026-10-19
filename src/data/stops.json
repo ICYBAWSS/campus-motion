@@ -1,182 +1,122 @@
 {
-"werblin": {
-"label": "Werblin Recreation Center",
-"lat": 40.51871,
-"lon": -74.46008,
-"at": [
--22.14,
--35.18
-]
-},
-"cas": {
-"label": "College Ave Student Center",
-"lat": 40.50329,
-"lon": -74.4521,
-"at": [
--8.63,
--1.08
-]
-},
-"yard": {
-"label": "The Yard",
-"lat": 40.49956,
-"lon": -74.44834,
-"at": [
--2.27,
-7.17
-]
-},
-"sac": {
-"label": "Student Activities Ctr",
-"lat": 40.50411,
-"lon": -74.44898,
-"at": [
--3.35,
--2.9
-]
-},
-"stadium": {
-"label": "Stadium West Lot",
-"lat": 40.51457,
-"lon": -74.46596,
-"at": [
--32.1,
--26.03
-]
-},
-"hill": {
-"label": "Hill Center",
-"lat": 40.52197,
-"lon": -74.46319,
-"at": [
--27.41,
--42.39
-]
-},
-"science": {
-"label": "Science Buildings",
-"lat": 40.52389,
-"lon": -74.46413,
-"at": [
--29.0,
--46.64
-]
-},
-"bsc": {
-"label": "Busch Student Center",
-"lat": 40.52359,
-"lon": -74.45811,
-"at": [
--18.81,
--45.98
-]
-},
-"livPlaza": {
-"label": "Livingston Plaza",
-"lat": 40.52506,
-"lon": -74.43853,
-"at": [
-14.34,
--49.23
-]
-},
-"livSc": {
-"label": "Livingston Student Center",
-"lat": 40.52399,
-"lon": -74.43659,
-"at": [
-17.62,
--46.86
-]
-},
-"quads": {
-"label": "Quads",
-"lat": 40.51995,
-"lon": -74.43358,
-"at": [
-22.72,
--37.93
-]
-},
-"rodkin": {
-"label": "Rodkin",
-"lat": 40.51578,
-"lon": -74.46299,
-"at": [
--27.07,
--28.71
-]
-},
-"arc": {
-"label": "Allison Road Classroom",
-"lat": 40.52371,
-"lon": -74.46508,
-"at": [
--30.61,
--46.24
-]
-},
-"redoak": {
-"label": "Red Oak Lane",
-"lat": 40.48282,
-"lon": -74.43762,
-"at": [
-15.88,
-44.19
-]
-},
-"lipman": {
-"label": "Lipman Hall",
-"lat": 40.48118,
-"lon": -74.43642,
-"at": [
-17.91,
-47.81
-]
-},
-"collegeHall": {
-"label": "College Hall",
-"lat": 40.48568,
-"lon": -74.43745,
-"at": [
-16.17,
-37.86
-]
-},
-"biel": {
-"label": "Biel Road",
-"lat": 40.47993,
-"lon": -74.43249,
-"at": [
-24.56,
-50.58
-]
-},
-"henderson": {
-"label": "Henderson Apartments",
-"lat": 40.48111,
-"lon": -74.42879,
-"at": [
-30.83,
-47.97
-]
-},
-"gibbons": {
-"label": "Gibbons",
-"lat": 40.48525,
-"lon": -74.43187,
-"at": [
-25.61,
-38.81
-]
-},
-"socam": {
-"label": "SoCam Apartments",
-"lat": 40.4923,
-"lon": -74.44245,
-"at": [
-7.7,
-23.22
-]
-}
+  "werblin": {
+    "label": "Werblin Recreation Center",
+    "lat": 40.51871,
+    "lon": -74.46008,
+    "at": [-22.14, -35.18]
+  },
+  "cas": {
+    "label": "College Ave Student Center",
+    "lat": 40.50329,
+    "lon": -74.4521,
+    "at": [-8.63, -1.08]
+  },
+  "yard": {
+    "label": "The Yard",
+    "lat": 40.49956,
+    "lon": -74.44834,
+    "at": [-2.27, 7.17]
+  },
+  "sac": {
+    "label": "Student Activities Ctr",
+    "lat": 40.50411,
+    "lon": -74.44898,
+    "at": [-3.35, -2.9]
+  },
+  "stadium": {
+    "label": "Stadium West Lot",
+    "lat": 40.51457,
+    "lon": -74.46596,
+    "at": [-32.1, -26.03]
+  },
+  "hill": {
+    "label": "Hill Center",
+    "lat": 40.52197,
+    "lon": -74.46319,
+    "at": [-27.41, -42.39]
+  },
+  "science": {
+    "label": "Science Buildings",
+    "lat": 40.52389,
+    "lon": -74.46413,
+    "at": [-29.0, -46.64]
+  },
+  "bsc": {
+    "label": "Busch Student Center",
+    "lat": 40.52359,
+    "lon": -74.45811,
+    "at": [-18.81, -45.98]
+  },
+  "livPlaza": {
+    "label": "Livingston Plaza",
+    "lat": 40.52506,
+    "lon": -74.43853,
+    "at": [14.34, -49.23]
+  },
+  "livSc": {
+    "label": "Livingston Student Center",
+    "lat": 40.52399,
+    "lon": -74.43659,
+    "at": [17.62, -46.86]
+  },
+  "quads": {
+    "label": "Quads",
+    "lat": 40.51995,
+    "lon": -74.43358,
+    "at": [22.72, -37.93]
+  },
+  "rodkin": {
+    "label": "Rodkin",
+    "lat": 40.51578,
+    "lon": -74.46299,
+    "at": [-27.07, -28.71]
+  },
+  "arc": {
+    "label": "Allison Road Classroom",
+    "lat": 40.52371,
+    "lon": -74.46508,
+    "at": [-30.61, -46.24]
+  },
+  "redoak": {
+    "label": "Red Oak Lane",
+    "lat": 40.48282,
+    "lon": -74.43762,
+    "at": [15.88, 44.19]
+  },
+  "lipman": {
+    "label": "Lipman Hall",
+    "lat": 40.48118,
+    "lon": -74.43642,
+    "at": [17.91, 47.81]
+  },
+  "collegeHall": {
+    "label": "College Hall",
+    "lat": 40.48568,
+    "lon": -74.43745,
+    "at": [16.17, 37.86]
+  },
+  "biel": {
+    "label": "Biel Road",
+    "lat": 40.47993,
+    "lon": -74.43249,
+    "at": [24.56, 50.58]
+  },
+  "henderson": {
+    "label": "Henderson Apartments",
+    "lat": 40.48111,
+    "lon": -74.42879,
+    "at": [30.83, 47.97]
+  },
+  "gibbons": {
+    "label": "Gibbons",
+    "lat": 40.48525,
+    "lon": -74.43187,
+    "at": [25.61, 38.81]
+  },
+  "socam": {
+    "label": "SoCam Apartments",
+    "lat": 40.4923,
+    "lon": -74.44245,
+    "at": [7.7, 23.22]
+  }
 }

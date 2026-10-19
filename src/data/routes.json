@@ -1,139 +1,80 @@
 [
-{
-"ref": "A",
-"stops": [
-"werblin",
-"cas",
-"yard",
-"sac",
-"stadium",
-"hill",
-"science",
-"bsc"
-]
-},
-{
-"ref": "B",
-"stops": [
-"bsc",
-"livPlaza",
-"livSc",
-"quads",
-"hill",
-"science"
-]
-},
-{
-"ref": "C",
-"stops": [
-"hill",
-"stadium",
-"arc"
-]
-},
-{
-"ref": "H",
-"stops": [
-"stadium",
-"cas",
-"yard",
-"sac",
-"werblin",
-"bsc",
-"arc",
-"hill"
-]
-},
-{
-"ref": "RexB",
-"stops": [
-"hill",
-"redoak",
-"lipman",
-"collegeHall",
-"arc"
-]
-},
-{
-"ref": "RexL",
-"stops": [
-"livSc",
-"redoak",
-"lipman",
-"collegeHall",
-"livPlaza"
-]
-},
-{
-"ref": "Lx",
-"stops": [
-"quads",
-"cas",
-"yard",
-"sac",
-"livPlaza",
-"livSc"
-]
-},
-{
-"ref": "W1",
-"stops": [
-"cas",
-"yard",
-"sac",
-"hill",
-"science",
-"bsc",
-"livPlaza",
-"livSc",
-"quads",
-"redoak",
-"lipman",
-"biel",
-"henderson",
-"gibbons",
-"collegeHall",
-"socam"
-]
-},
-{
-"ref": "W2",
-"stops": [
-"hill",
-"cas",
-"yard",
-"socam",
-"redoak",
-"lipman",
-"biel",
-"henderson",
-"gibbons",
-"collegeHall",
-"sac",
-"livPlaza",
-"livSc",
-"quads",
-"bsc",
-"arc"
-]
-},
-{
-"ref": "EE",
-"stops": [
-"cas",
-"yard",
-"sac",
-"socam",
-"redoak"
-]
-},
-{
-"ref": "F",
-"stops": [
-"redoak",
-"lipman",
-"collegeHall",
-"cas"
-]
-}
+  {
+    "ref": "A",
+    "stops": ["werblin", "cas", "yard", "sac", "stadium", "hill", "science", "bsc"]
+  },
+  {
+    "ref": "B",
+    "stops": ["bsc", "livPlaza", "livSc", "quads", "hill", "science"]
+  },
+  {
+    "ref": "C",
+    "stops": ["hill", "stadium", "arc"]
+  },
+  {
+    "ref": "H",
+    "stops": ["stadium", "cas", "yard", "sac", "werblin", "bsc", "arc", "hill"]
+  },
+  {
+    "ref": "RexB",
+    "stops": ["hill", "redoak", "lipman", "collegeHall", "arc"]
+  },
+  {
+    "ref": "RexL",
+    "stops": ["livSc", "redoak", "lipman", "collegeHall", "livPlaza"]
+  },
+  {
+    "ref": "Lx",
+    "stops": ["quads", "cas", "yard", "sac", "livPlaza", "livSc"]
+  },
+  {
+    "ref": "W1",
+    "stops": [
+      "cas",
+      "yard",
+      "sac",
+      "hill",
+      "science",
+      "bsc",
+      "livPlaza",
+      "livSc",
+      "quads",
+      "redoak",
+      "lipman",
+      "biel",
+      "henderson",
+      "gibbons",
+      "collegeHall",
+      "socam"
+    ]
+  },
+  {
+    "ref": "W2",
+    "stops": [
+      "hill",
+      "cas",
+      "yard",
+      "socam",
+      "redoak",
+      "lipman",
+      "biel",
+      "henderson",
+      "gibbons",
+      "collegeHall",
+      "sac",
+      "livPlaza",
+      "livSc",
+      "quads",
+      "bsc",
+      "arc"
+    ]
+  },
+  {
+    "ref": "EE",
+    "stops": ["cas", "yard", "sac", "socam", "redoak"]
+  },
+  {
+    "ref": "F",
+    "stops": ["redoak", "lipman", "collegeHall", "cas"]
+  }
 ]

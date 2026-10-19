@@ -4,6 +4,7 @@ import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import NET from './network.json'
 import { CAPACITY, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
+import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
 const M = 50
 /** metres -> scene units */
@@ -112,8 +113,14 @@ function Buildings({ data }: { data: B[] }) {
 /** grass, asphalt and concrete, all from the routing graph so nothing floats */
 function Ground() {
   const { road, walk } = useMemo(() => {
-    const edges = (NET as unknown as { edges: { a: number[]; b: number[]; drive: boolean; walk: boolean; kind: string }[] }).edges
-    const build = (keep: (e: { drive: boolean; walk: boolean }) => boolean, width: (k: string) => number, colour: number[]) => {
+    const edges = (
+      NET as unknown as { edges: { a: number[]; b: number[]; drive: boolean; walk: boolean; kind: string }[] }
+    ).edges
+    const build = (
+      keep: (e: { drive: boolean; walk: boolean }) => boolean,
+      width: (k: string) => number,
+      colour: number[],
+    ) => {
       const pos: number[] = []
       const col: number[] = []
       for (const e of edges) {
@@ -127,12 +134,24 @@ function Ground() {
         const nx = (-dz / len) * w
         const nz = (dx / len) * w
         pos.push(
-          x1 + nx, 0, z1 + nz,
-          x1 - nx, 0, z1 - nz,
-          x2 + nx, 0, z2 + nz,
-          x2 + nx, 0, z2 + nz,
-          x1 - nx, 0, z1 - nz,
-          x2 - nx, 0, z2 - nz,
+          x1 + nx,
+          0,
+          z1 + nz,
+          x1 - nx,
+          0,
+          z1 - nz,
+          x2 + nx,
+          0,
+          z2 + nz,
+          x2 + nx,
+          0,
+          z2 + nz,
+          x1 - nx,
+          0,
+          z1 - nz,
+          x2 - nx,
+          0,
+          z2 - nz,
         )
         for (let k = 0; k < 6; k++) col.push(colour[0], colour[1], colour[2])
       }
@@ -142,7 +161,15 @@ function Ground() {
       return g
     }
     const roadWidth = (k: string) =>
-      k === 'primary' ? m(18) : k === 'secondary' ? m(14) : k === 'tertiary' ? m(11) : k === 'residential' ? m(8) : m(5.5)
+      k === 'primary'
+        ? m(18)
+        : k === 'secondary'
+          ? m(14)
+          : k === 'tertiary'
+            ? m(11)
+            : k === 'residential'
+              ? m(8)
+              : m(5.5)
     const walkWidth = (k: string) => (k === 'pedestrian' ? m(7) : k === 'path' ? m(2.6) : m(3))
     return {
       road: build((e) => e.drive, roadWidth, [0.63, 0.64, 0.66]),
@@ -181,14 +208,23 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
   const load = bus.riders.length / CAPACITY
   return (
     <group ref={g}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]} renderOrder={2}>
+        <planeGeometry args={[m(13), m(4)]} />
+        <meshBasicMaterial color="#1f2937" transparent opacity={0.35} depthWrite={false} />
+      </mesh>
       <group scale={m(12) / 2.1}>
+        {/* scarlet body reads from the air; the white roof band is what you see top-down */}
         <mesh position={[0, 0.42, 0]}>
           <boxGeometry args={[2.1, 0.44, 0.86]} />
-          <meshStandardMaterial color="#f7f7f5" roughness={0.55} />
+          <meshStandardMaterial color="#b3002d" roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 0.66, 0]}>
+          <boxGeometry args={[2.02, 0.06, 0.78]} />
+          <meshStandardMaterial color="#f8f8f6" roughness={0.7} />
         </mesh>
         <mesh position={[0, 0.3, 0]}>
           <boxGeometry args={[2.12, 0.16, 0.88]} />
-          <meshStandardMaterial color="#cc0033" roughness={0.6} />
+          <meshStandardMaterial color="#7f0021" roughness={0.6} />
         </mesh>
         {[-1, 1].map((s) => (
           <mesh key={s} position={[0, 0.5, s * 0.435]}>
@@ -202,7 +238,14 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
             <meshStandardMaterial color="#1f2a37" roughness={0.15} metalness={0.5} />
           </mesh>
         ))}
-        {([[-0.72, -0.42], [-0.72, 0.42], [0.72, -0.42], [0.72, 0.42]] as const).map(([x, z], i) => (
+        {(
+          [
+            [-0.72, -0.42],
+            [-0.72, 0.42],
+            [0.72, -0.42],
+            [0.72, 0.42],
+          ] as const
+        ).map(([x, z], i) => (
           <mesh key={i} position={[x, 0.13, z]} rotation-x={Math.PI / 2}>
             <cylinderGeometry args={[0.13, 0.13, 0.1, 12]} />
             <meshStandardMaterial color="#111827" roughness={0.9} />
@@ -227,41 +270,87 @@ function sampleAt(bus: Bus, ahead: number): [number, number] {
     const seg = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
     if (acc + seg >= d) {
       const t = (d - acc) / (seg || 1)
-      return [path[i - 1][0] + (path[i][0] - path[i - 1][0]) * t, path[i - 1][1] + (path[i][1] - path[i - 1][1]) * t]
+      return [
+        path[i - 1][0] + (path[i][0] - path[i - 1][0]) * t,
+        path[i - 1][1] + (path[i][1] - path[i - 1][1]) * t,
+      ]
     }
     acc += seg
   }
   return path[path.length - 1]
 }
 
+/**
+ * Agents as sprite billboards. One instanced quad per (variant, pose); the pose
+ * alternates while walking so legs swing. This is the reference project's trick:
+ * a painted figure reads at 8 px, a capsule does not.
+ */
 function People({ agents, clock }: { agents: Agent[]; clock: { t: number } }) {
-  const ref = useRef<THREE.InstancedMesh>(null)
+  const { camera } = useThree()
+  const tex = useMemo(() => figureTextures(), [])
+  const refs = useRef<(THREE.InstancedMesh | null)[]>([])
   const dummy = useMemo(() => new THREE.Object3D(), [])
-  const colour = useMemo(() => new THREE.Color(), [])
   const H = m(1.75)
+  const W = H * FIGURE_ASPECT
+
   useFrame(() => {
-    const mesh = ref.current
-    if (!mesh) return
     const f = clock.t - Math.floor(clock.t)
-    for (let i = 0; i < agents.length; i++) {
-      const a = agents[i]
-      const x = a.px + (a.x - a.px) * f
-      const z = a.pz + (a.z - a.pz) * f
-      dummy.position.set(x, H / 2, z)
-      // riders are inside a bus: hide them so they do not stand in the road
-      dummy.scale.setScalar(a.state === 'ride' ? 0.0001 : H)
-      dummy.updateMatrix()
-      mesh.setMatrixAt(i, dummy.matrix)
-      mesh.setColorAt(i, colour.set(a.state === 'wait' ? '#dc2626' : a.col))
+    const stride = Math.floor(clock.t * 8) % 2
+    const buckets: Agent[][] = Array.from({ length: VARIANTS * POSES.length }, () => [])
+    for (const a of agents) {
+      if (a.state === 'ride') continue
+      const moving = a.state === 'walk-stop' || a.state === 'walk-dest'
+      const pose = moving ? (stride ? 1 : 2) : 0
+      buckets[(a.id % VARIANTS) * POSES.length + pose].push(a)
     }
-    mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    for (let i = 0; i < buckets.length; i++) {
+      const mesh = refs.current[i]
+      if (!mesh) continue
+      const list = buckets[i]
+      for (let k = 0; k < list.length; k++) {
+        const a = list[k]
+        const x = a.px + (a.x - a.px) * f
+        const z = a.pz + (a.z - a.pz) * f
+        dummy.position.set(x, H / 2, z)
+        dummy.quaternion.copy(camera.quaternion)
+        dummy.scale.set(W, H, 1)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(k, dummy.matrix)
+      }
+      const count = mesh.instanceMatrix.count
+      dummy.scale.set(0.00001, 0.00001, 1)
+      dummy.updateMatrix()
+      for (let k = list.length; k < count; k++) mesh.setMatrixAt(k, dummy.matrix)
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.count = count
+    }
   })
+
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, agents.length]} frustumCulled={false}>
-      <capsuleGeometry args={[0.32, 1, 2, 6]} />
-      <meshStandardMaterial roughness={0.8} />
-    </instancedMesh>
+    <>
+      {Array.from({ length: VARIANTS }, (_, v) =>
+        POSES.map((_, p) => (
+          <instancedMesh
+            key={`${v}-${p}`}
+            ref={(el) => {
+              refs.current[v * POSES.length + p] = el
+            }}
+            args={[undefined, undefined, agents.length]}
+            frustumCulled={false}
+            renderOrder={4}
+          >
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial
+              map={tex[v][p]}
+              transparent
+              alphaTest={0.25}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </instancedMesh>
+        )),
+      )}
+    </>
   )
 }
 

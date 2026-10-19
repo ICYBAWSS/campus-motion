@@ -85,7 +85,20 @@ export const DWELL = 0.4 // minutes at each stop
 export const START = 7 * 60 // 07:00
 
 /** headway in minutes per route, weekday daytime. Anything not listed runs at 12. */
-const HEADWAY: Record<string, number> = { A: 6, B: 5, C: 12, H: 7, RexB: 9, RexL: 7, Lx: 4, EE: 10, F: 10, 'B/L': 12, W1: 15, W2: 15 }
+const HEADWAY: Record<string, number> = {
+  A: 6,
+  B: 5,
+  C: 12,
+  H: 7,
+  RexB: 9,
+  RexL: 7,
+  Lx: 4,
+  EE: 10,
+  F: 10,
+  'B/L': 12,
+  W1: 15,
+  W2: 15,
+}
 
 export type AgentState = 'home' | 'walk-stop' | 'wait' | 'ride' | 'walk-dest' | 'at-dest'
 
@@ -139,7 +152,7 @@ export type Sim = ReturnType<typeof createSim>
 export function createSim(opts: { population?: number; seed?: number } = {}) {
   const population = opts.population ?? 600
   const rand = rng(opts.seed ?? 7)
-  const pick = <T,>(xs: T[]): T => xs[Math.floor(rand() * xs.length) % xs.length]
+  const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length) % xs.length]
 
   const stopKeys = Object.keys(STOPS)
   const carriers = ROUTES.filter((r) => r.stops.length >= 2)
