@@ -22,7 +22,7 @@ const toUnit = (lat: number, lon: number): [number, number] => [
   (-(lat - CENTER[0]) * KY) / M,
 ]
 
-type B = { x: number; z: number; w: number; d: number; h: number; rot: number; name: string }
+type B = { ring: [number, number][]; h: number; colour: string }
 
 const CAT_COLOUR: Record<string, string> = {
   Academic: '#b5654a',
@@ -49,29 +49,17 @@ function useCampus() {
           const ring: [number, number][] =
             f.geometry?.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry?.coordinates?.[0]?.[0]
           if (!ring || ring.length < 4) continue
+          // keep the true outline: a bounding box on a diagonal building spills onto the road
           const pts = ring.map(([lon, lat]) => toUnit(lat, lon))
-          let minX = Infinity
-          let maxX = -Infinity
-          let minZ = Infinity
-          let maxZ = -Infinity
-          for (const [x, z] of pts) {
-            minX = Math.min(minX, x)
-            maxX = Math.max(maxX, x)
-            minZ = Math.min(minZ, z)
-            maxZ = Math.max(maxZ, z)
-          }
-          const w = maxX - minX
-          const d = maxZ - minZ
-          if (w < m(6) || d < m(6)) continue
-          out.push({
-            x: (minX + maxX) / 2,
-            z: (minZ + maxZ) / 2,
-            w,
-            d,
-            h: m(3.6) * 3,
-            rot: 0,
-            name: f.properties?.BldgName ?? '',
-          })
+          const area = Math.abs(
+            pts.reduce((a, [x, z], i) => {
+              const [nx, nz] = pts[(i + 1) % pts.length]
+              return a + (x * nz - nx * z)
+            }, 0) / 2,
+          )
+          if (area < m(8) * m(8)) continue
+          const cat = String(f.properties?.Category ?? '')
+          out.push({ ring: pts, h: m(3.6) * 3, colour: CAT_COLOUR[cat] ?? '#b8b1a4' })
         }
         setData(out)
       })
@@ -83,31 +71,62 @@ function useCampus() {
   return data
 }
 
+/**
+ * Buildings are extruded from their real footprints — roof triangulated from the
+ * ring, walls raised along every edge. This is the whole point of keeping the
+ * polygon: a bounding box would cover the street the building sits beside.
+ */
 function Buildings({ data }: { data: B[] }) {
-  const ref = useRef<THREE.InstancedMesh>(null)
-  useEffect(() => {
-    const mesh = ref.current
-    if (!mesh || !data.length) return
-    const dummy = new THREE.Object3D()
-    const colour = new THREE.Color()
-    data.forEach((b, i) => {
-      dummy.position.set(b.x, b.h / 2, b.z)
-      dummy.rotation.set(0, b.rot, 0)
-      dummy.scale.set(b.w, b.h, b.d)
-      dummy.updateMatrix()
-      mesh.setMatrixAt(i, dummy.matrix)
-      mesh.setColorAt(i, colour.set(b.name ? CAT_COLOUR['Academic'] : '#b8b1a4'))
-    })
-    mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-    mesh.computeBoundingSphere()
+  const geom = useMemo(() => {
+    const pos: number[] = []
+    const col: number[] = []
+    const c = new THREE.Color()
+
+    for (const b of data) {
+      const ring = b.ring.slice()
+      // three's triangulator wants a CCW contour
+      let area = 0
+      for (let i = 0; i < ring.length; i++) {
+        const [x, z] = ring[i]
+        const [nx, nz] = ring[(i + 1) % ring.length]
+        area += x * nz - nx * z
+      }
+      const contour = (area < 0 ? ring.slice().reverse() : ring).map(([x, z]) => new THREE.Vector2(x, z))
+      if (contour.length < 3) continue
+
+      const faces = THREE.ShapeUtils.triangulateShape(contour, [])
+      c.set(b.colour)
+      const rooC = [c.r * 1.08, c.g * 1.08, c.b * 1.08]
+      const wallC = [c.r * 0.86, c.g * 0.86, c.b * 0.88]
+
+      for (const f of faces) {
+        for (const idx of f) {
+          const v = contour[idx]
+          pos.push(v.x, b.h, v.y)
+          col.push(rooC[0], rooC[1], rooC[2])
+        }
+      }
+      for (let i = 0; i < contour.length; i++) {
+        const a = contour[i]
+        const d = contour[(i + 1) % contour.length]
+        pos.push(a.x, 0, a.y, d.x, 0, d.y, d.x, b.h, d.y)
+        pos.push(a.x, 0, a.y, d.x, b.h, d.y, a.x, b.h, a.y)
+        for (let k = 0; k < 6; k++) col.push(wallC[0], wallC[1], wallC[2])
+      }
+    }
+
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+    g.computeVertexNormals()
+    return g
   }, [data])
+
   if (!data.length) return null
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, data.length]}>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial roughness={0.85} />
-    </instancedMesh>
+    <mesh geometry={geom}>
+      <meshStandardMaterial vertexColors roughness={0.85} side={THREE.DoubleSide} />
+    </mesh>
   )
 }
 

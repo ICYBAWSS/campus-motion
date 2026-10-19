@@ -6,7 +6,7 @@ import { createSim } from './sim'
 
 export default function App() {
   const [running, setRunning] = useState(true)
-  const [speed, setSpeed] = useState(60)
+  const [speed, setSpeed] = useState(1)
   const [, setFrame] = useState(0)
 
   // one simulation for the session; the scene advances it on the frame clock
