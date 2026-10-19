@@ -49,6 +49,8 @@ export type SimWorld = {
   startClock: number
 }
 
+import { pathLength, samplePath, walkRoute, type P } from './network'
+
 export type AgentState = 'home' | 'walk-stop' | 'wait' | 'ride' | 'walk-dest' | 'at-dest'
 
 type Appointment = { t: number; building: BuildingId; until: number }
@@ -70,8 +72,8 @@ export type Agent = {
   bus: number
   colour: string
   plan: Appointment[]
-  /** where the current walk is headed and when it ends */
-  leg: { x: number; z: number; t0: number; t1: number } | null
+  /** the footway path being walked, and when it ends */
+  leg: { path: P[]; t0: number; t1: number } | null
   /** boarding bookkeeping while riding */
   boardAt: number
   alightAt: number
@@ -246,8 +248,12 @@ export function createSim(world: SimWorld, from = 0): Sim {
     return b ? [b.x, b.z] : [0, 0]
   }
   const stopOf = (id: BuildingId): StopId => byId.get(id)?.stop ?? agents[0].stop
-  const minutesToWalk = (from2: [number, number], to2: [number, number]) =>
-    Math.hypot(from2[0] - to2[0], from2[1] - to2[1]) / world.walkSpeed
+  /** a walk leg on the real footway network: path, start, and end time */
+  const makeLeg = (from2: P, to2: P, t0: number) => {
+    const path = walkRoute(from2, to2)
+    const minutes = Math.max(1, pathLength(path) / world.walkSpeed)
+    return { path, t0, t1: t0 + minutes }
+  }
 
   const arrive = (a: Agent, t: number) => {
     const appt = a.plan.find((p) => p.building === a.dest && p.t <= t + 1)
@@ -269,26 +275,30 @@ export function createSim(world: SimWorld, from = 0): Sim {
           const next = a.plan.find((p) => p.t > t)
           if (!next) break
           const destPt = pointOf(next.building)
-          const leaveAt = next.t - Math.max(3, minutesToWalk([a.x, a.z], destPt)) - 1
+          const leaveAt =
+            next.t - Math.max(3, pathLength(walkRoute([a.x, a.z], destPt)) / world.walkSpeed) - 1
           if (t >= leaveAt) {
             a.dest = next.building
             a.target = next.t
             a.stop = stopOf(next.building)
             a.state = 'walk-stop'
             a.since = t
-            a.leg = { x: a.x, z: a.z, t0: t, t1: next.t }
+            a.leg = makeLeg([a.x, a.z], world.stops[a.stop], t)
           }
           break
         }
 
         case 'walk-stop': {
           const [sx, sz] = world.stops[a.stop]
-          // 0.18 of the remaining gap per minute reads as a walk at this scale
-          a.x += (sx - a.x) * 0.18
-          a.z += (sz - a.z) * 0.18
-          if (Math.hypot(a.x - sx, a.z - sz) < 0.5 || t - a.since > 60) {
+          const leg = a.leg ?? makeLeg([a.x, a.z], [sx, sz], a.since)
+          a.leg = leg
+          const [px, pz] = samplePath(leg.path, (t - leg.t0) / Math.max(0.001, leg.t1 - leg.t0))
+          a.x = px
+          a.z = pz
+          if (t >= leg.t1) {
             a.x = sx
             a.z = sz
+            a.leg = null
             a.state = 'wait'
             a.since = t
             if (!a.queued) {
@@ -309,16 +319,22 @@ export function createSim(world: SimWorld, from = 0): Sim {
             const d = pointOf(a.dest)
             a.state = 'walk-dest'
             a.since = t
-            a.leg = { x: d[0], z: d[1], t0: t, t1: t + Math.max(2, minutesToWalk([a.x, a.z], d)) }
+            a.leg = makeLeg([a.x, a.z], d, t)
           }
           break
         }
 
         case 'walk-dest': {
           const d = pointOf(a.dest)
-          a.x += (d[0] - a.x) * 0.18
-          a.z += (d[1] - a.z) * 0.18
-          if (Math.hypot(a.x - d[0], a.z - d[1]) < 0.5 || t - a.since > 90) arrive(a, t)
+          const leg = a.leg ?? makeLeg([a.x, a.z], d, a.since)
+          a.leg = leg
+          const [px, pz] = samplePath(leg.path, (t - leg.t0) / Math.max(0.001, leg.t1 - leg.t0))
+          a.x = px
+          a.z = pz
+          if (t >= leg.t1) {
+            a.leg = null
+            arrive(a, t)
+          }
           break
         }
 
@@ -328,12 +344,7 @@ export function createSim(world: SimWorld, from = 0): Sim {
             a.dest = home.id
             a.state = 'walk-dest'
             a.since = t
-            a.leg = {
-              x: home.x,
-              z: home.z,
-              t0: t,
-              t1: t + Math.max(2, minutesToWalk([a.x, a.z], [home.x, home.z])),
-            }
+            a.leg = makeLeg([a.x, a.z], [home.x, home.z], t)
           }
           break
         }
@@ -370,10 +381,10 @@ export function createSim(world: SimWorld, from = 0): Sim {
           a.state = 'walk-dest'
           a.since = t
           a.bus = -1
-          const d = pointOf(a.dest)
-          a.leg = { x: d[0], z: d[1], t0: t, t1: t + Math.max(2, minutesToWalk([a.x, a.z], d)) }
           a.x = b.x
           a.z = b.z
+          const d = pointOf(a.dest)
+          a.leg = makeLeg([a.x, a.z], d, t)
           const tot = totals[here]
           if (a.boardAt >= 0) {
             tot.sum += t - a.boardAt

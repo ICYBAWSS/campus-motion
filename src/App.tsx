@@ -2010,19 +2010,19 @@ const ROAD_WIDTH: Record<string, number> = {
   unclassified: m(8),
   living_street: m(6),
   service: m(5.5),
-  footway: m(2.4),
-  path: m(2),
-  pedestrian: m(6),
-  steps: m(2),
-  cycleway: m(2.4),
+  footway: m(3),
+  path: m(2.6),
+  pedestrian: m(7),
+  steps: m(2.4),
+  cycleway: m(2.8),
 }
 
 const ROAD_COLOUR: Record<string, number[]> = {
-  footway: [0.82, 0.8, 0.76],
-  path: [0.84, 0.82, 0.78],
-  pedestrian: [0.85, 0.83, 0.79],
-  steps: [0.8, 0.78, 0.74],
-  cycleway: [0.7, 0.76, 0.7],
+  footway: [0.93, 0.91, 0.86],
+  path: [0.9, 0.88, 0.82],
+  pedestrian: [0.95, 0.93, 0.88],
+  steps: [0.88, 0.86, 0.81],
+  cycleway: [0.72, 0.78, 0.7],
   motorway: [0.42, 0.44, 0.47],
   trunk: [0.42, 0.44, 0.47],
   primary: [0.47, 0.49, 0.52],
@@ -2035,55 +2035,67 @@ const ROAD_COLOUR: Record<string, number[]> = {
 }
 
 function Roads() {
-  /* One buffer for the whole network, built from the same graph the bus routes are
-     computed on — so a route can never run where no road is drawn. */
-  const geom = useMemo(() => {
-    const pos: number[] = []
-    const col: number[] = []
-    const net = NETWORK as unknown as { edges: { a: number[]; b: number[]; kind: string }[] }
-    for (const e of net.edges) {
-      const [x1, z1] = e.a as [number, number]
-      const [x2, z2] = e.b as [number, number]
-      const dx = x2 - x1
-      const dz = z2 - z1
-      const len = Math.hypot(dx, dz) || 1
-      const w = (ROAD_WIDTH[e.kind] ?? m(5.5)) / 2
-      const nx = (-dz / len) * w
-      const nz = (dx / len) * w
-      const c = ROAD_COLOUR[e.kind] ?? [0.66, 0.67, 0.69]
-      pos.push(
-        x1 + nx,
-        0,
-        z1 + nz,
-        x1 - nx,
-        0,
-        z1 - nz,
-        x2 + nx,
-        0,
-        z2 + nz,
-        x2 + nx,
-        0,
-        z2 + nz,
-        x1 - nx,
-        0,
-        z1 - nz,
-        x2 - nx,
-        0,
-        z2 - nz,
-      )
-      for (let k = 0; k < 6; k++) col.push(c[0], c[1], c[2])
+  /* Two buffers from the same graph the buses and walkers are routed on:
+     carriageway, and the footway network drawn on top of it. */
+  const { road, walk } = useMemo(() => {
+    const net = NETWORK as unknown as {
+      edges: { a: number[]; b: number[]; drive: boolean; walk: boolean; kind: string }[]
     }
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
-    g.computeVertexNormals()
-    return g
+    const build = (only: (e: { drive: boolean; walk: boolean }) => boolean) => {
+      const pos: number[] = []
+      const col: number[] = []
+      for (const e of net.edges) {
+        if (!only(e)) continue
+        const [x1, z1] = e.a as [number, number]
+        const [x2, z2] = e.b as [number, number]
+        const dx = x2 - x1
+        const dz = z2 - z1
+        const len = Math.hypot(dx, dz) || 1
+        const w = (ROAD_WIDTH[e.kind] ?? m(5.5)) / 2
+        const nx = (-dz / len) * w
+        const nz = (dx / len) * w
+        const c = ROAD_COLOUR[e.kind] ?? [0.66, 0.67, 0.69]
+        pos.push(
+          x1 + nx,
+          0,
+          z1 + nz,
+          x1 - nx,
+          0,
+          z1 - nz,
+          x2 + nx,
+          0,
+          z2 + nz,
+          x2 + nx,
+          0,
+          z2 + nz,
+          x1 - nx,
+          0,
+          z1 - nz,
+          x2 - nx,
+          0,
+          z2 - nz,
+        )
+        for (let k = 0; k < 6; k++) col.push(c[0], c[1], c[2])
+      }
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+      g.computeVertexNormals()
+      return g
+    }
+    return { road: build((e) => e.drive), walk: build((e) => e.walk && !e.drive) }
   }, [])
 
   return (
-    <mesh geometry={geom} position={[0, 0.02, 0]}>
-      <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
-    </mesh>
+    <>
+      <mesh geometry={road} position={[0, 0.01, 0]}>
+        <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
+      </mesh>
+      {/* concrete sidewalks, a shade above the asphalt so they never z-fight with it */}
+      <mesh geometry={walk} position={[0, 0.035, 0]} renderOrder={1}>
+        <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
+      </mesh>
+    </>
   )
 }
 
