@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import NET from './network.json'
-import { BUS_SPEED, ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
+import { ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
 import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
 const M = 50
@@ -218,13 +218,13 @@ function BusMesh({ bus, clock }: { bus: Bus; clock: { t: number } }) {
     const node = g.current
     if (!node) return
     const f = clock.t - Math.floor(clock.t)
-    const x = bus.px + (bus.x - bus.px) * f
-    const z = bus.pz + (bus.z - bus.pz) * f
-    node.position.set(x, 0, z)
-    // heading from the path itself, at the *interpolated* distance, so the bus
-    // never lags a frame behind its own nose
-    const dNow = bus.d - (1 - f) * BUS_SPEED
+    // interpolate along the loop, modulo its length: interpolating xz directly
+    // makes a wrapping bus fly straight across the campus and back
+    const len = bus.route.len
+    const step = (((bus.d - bus.pd) % len) + len) % len
+    const dNow = (bus.pd + step * f) % len
     const p0 = atDistance(bus, dNow)
+    node.position.set(p0[0], 0, p0[1])
     const p1 = atDistance(bus, dNow + 1.5)
     const dx = p1[0] - p0[0]
     const dz = p1[1] - p0[1]

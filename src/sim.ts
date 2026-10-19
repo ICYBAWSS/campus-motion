@@ -137,6 +137,8 @@ export type Bus = {
   route: Route
   /** distance along the loop */
   d: number
+  /** distance one tick ago — interpolate along the path, never across it */
+  pd: number
   x: number
   z: number
   px: number
@@ -213,6 +215,7 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
       buses.push({
         route,
         d,
+        pd: d,
         x: p[0],
         z: p[1],
         px: p[0],
@@ -251,6 +254,7 @@ export function createSim(opts: { population?: number; seed?: number } = {}) {
     for (const b of buses) {
       b.px = b.x
       b.pz = b.z
+      b.pd = b.d
     }
 
     /* buses move along their loop, dwelling at stops */

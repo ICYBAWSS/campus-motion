@@ -59,6 +59,40 @@ for (let step = 0; step < 30; step++) {
   })
 }
 
+/* wrapping the loop must not teleport: the interpolated position one tick apart
+   along the path has to be within one tick's travel, never a campus diagonal */
+function atDistance(bus, distance) {
+  const len = bus.route.len
+  const target = ((distance % len) + len) % len
+  let acc = 0
+  const path = bus.route.path
+  for (let i = 1; i < path.length; i++) {
+    const seg = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
+    if (acc + seg >= target) {
+      const t = (target - acc) / (seg || 1)
+      return [path[i - 1][0] + (path[i][0] - path[i - 1][0]) * t, path[i - 1][1] + (path[i][1] - path[i - 1][1]) * t]
+    }
+    acc += seg
+  }
+  return path[path.length - 1]
+}
+
+let wraps = 0
+for (let step = 0; step < 120; step++) {
+  sim.runTo(600 + step + 1)
+  for (const b of sim.buses) {
+    if (b.d >= b.pd) continue
+    wraps++
+    const len = b.route.len
+    const advance = (((b.d - b.pd) % len) + len) % len
+    const a = atDistance(b, b.pd)
+    const m = atDistance(b, (b.pd + advance * 0.5) % len)
+    const jump = Math.hypot(m[0] - a[0], m[1] - a[1])
+    assert.ok(jump <= BUS_SPEED, `bus on ${b.route.ref} jumped ${jump.toFixed(1)} units across the loop wrap`)
+  }
+}
+console.log(`wrap ok — ${wraps} loop wraps, none teleported`)
+
 assert.ok(moved > 0, 'buses actually move')
 assert.ok(offRoute === 0, `${offRoute} samples left the route (worst ${worst.toFixed(1)} m)`)
 console.log(`bus ok — ${moved} moving samples, ${dwelling} dwelling, worst ${worst.toFixed(1)} m off route`)
