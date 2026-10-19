@@ -416,7 +416,7 @@ function Stops() {
             <meshBasicMaterial color="#ffffff" transparent opacity={0.85} />
           </mesh>
           {MAJOR.has(k) && (
-            <Html position={[0, m(12), 0]} center style={{ pointerEvents: 'none' }}>
+            <Html position={[0, m(12), 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
               <div className="whitespace-nowrap rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-slate-700 shadow-sm">
                 {s.label}
               </div>
