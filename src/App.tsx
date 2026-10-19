@@ -246,6 +246,31 @@ const makeRoute = (spec: RouteSpec) => {
   }
 }
 
+/**
+ * EE and F are the College Avenue <-> Cook/Douglass pair that the weekday DOTS sheet lists
+ * (EE: CA -> Yard -> SAC -> SoCam -> Red Oak; F: Red Oak -> Lipman -> College Hall -> CA).
+ * Their stop order comes from ipo.rutgers.edu/dots/weekday-routes-nb; the *path* between stops is
+ * a straight line because there is no published polyline for them in the data we have.
+ * ponytail: straight-line path, add hand-traced geometry when someone drives it.
+ */
+const makeRouteFromStops = (
+  ref: string,
+  colour: string,
+  stops: StopKey[],
+  bands: Record<string, [number, number, number][]>,
+) => {
+  const path = stops.map((k) => STOPS[k].at)
+  return {
+    ref,
+    colour,
+    stops,
+    bands,
+    path,
+    len: pathLength(path),
+    haltD: stops.map((k) => projectOnPath(path, STOPS[k].at).d),
+  }
+}
+
 const ROUTES = [
   makeRoute({
     ref: 'A',
@@ -944,6 +969,15 @@ const ROUTES = [
       [40.5059, -74.4526],
       [40.5051, -74.4539],
     ],
+  }),
+
+  makeRouteFromStops('EE', '#b45309', ['cas', 'yard', 'sac', 'socam', 'redoak'], {
+    'mo-th': [[420, 1260, 10]],
+    fr: [[420, 1273, 10]],
+  }),
+  makeRouteFromStops('F', '#0f766e', ['redoak', 'lipman', 'collegeHall', 'cas'], {
+    'mo-th': [[420, 1260, 10]],
+    fr: [[420, 1273, 10]],
   }),
 ]
 
