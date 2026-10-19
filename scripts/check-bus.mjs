@@ -70,7 +70,10 @@ function atDistance(bus, distance) {
     const seg = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
     if (acc + seg >= target) {
       const t = (target - acc) / (seg || 1)
-      return [path[i - 1][0] + (path[i][0] - path[i - 1][0]) * t, path[i - 1][1] + (path[i][1] - path[i - 1][1]) * t]
+      return [
+        path[i - 1][0] + (path[i][0] - path[i - 1][0]) * t,
+        path[i - 1][1] + (path[i][1] - path[i - 1][1]) * t,
+      ]
     }
     acc += seg
   }

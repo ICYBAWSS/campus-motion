@@ -44,7 +44,7 @@ export default function App() {
         orthographic
         dpr={1}
         camera={{ position: [0.001, 300, 0], zoom: 90, near: -2000, far: 4000 }}
-        gl={{ antialias: true }}
+        gl={{ antialias: true, preserveDrawingBuffer: true }}
         className="absolute inset-0"
       >
         <Scene sim={sim} clock={clock} speed={running ? speed : 0} focus={focus} />

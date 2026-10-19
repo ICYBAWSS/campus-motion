@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html, Line, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import NET from './network.json'
+import { FRAME, groundTexture } from './ground'
 import { ROUTES, STOPS, type Agent, type Bus, type Sim } from './sim'
 import { figureTextures, FIGURE_ASPECT, POSES, VARIANTS } from './atlas'
 
 const M = 50
+
 /** metres -> scene units */
 export const m = (metres: number) => metres / M
 
@@ -131,84 +132,14 @@ function Buildings({ data }: { data: B[] }) {
 
 /** grass, asphalt and concrete, all from the routing graph so nothing floats */
 function Ground() {
-  const { road, walk } = useMemo(() => {
-    const edges = (
-      NET as unknown as { edges: { a: number[]; b: number[]; drive: boolean; walk: boolean; kind: string }[] }
-    ).edges
-    const build = (
-      keep: (e: { drive: boolean; walk: boolean }) => boolean,
-      width: (k: string) => number,
-      colour: number[],
-    ) => {
-      const pos: number[] = []
-      const col: number[] = []
-      for (const e of edges) {
-        if (!keep(e)) continue
-        const [x1, z1] = e.a as [number, number]
-        const [x2, z2] = e.b as [number, number]
-        const dx = x2 - x1
-        const dz = z2 - z1
-        const len = Math.hypot(dx, dz) || 1
-        const w = width(e.kind) / 2
-        const nx = (-dz / len) * w
-        const nz = (dx / len) * w
-        pos.push(
-          x1 + nx,
-          0,
-          z1 + nz,
-          x1 - nx,
-          0,
-          z1 - nz,
-          x2 + nx,
-          0,
-          z2 + nz,
-          x2 + nx,
-          0,
-          z2 + nz,
-          x1 - nx,
-          0,
-          z1 - nz,
-          x2 - nx,
-          0,
-          z2 - nz,
-        )
-        for (let k = 0; k < 6; k++) col.push(colour[0], colour[1], colour[2])
-      }
-      const g = new THREE.BufferGeometry()
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
-      return g
-    }
-    const roadWidth = (k: string) =>
-      k === 'primary'
-        ? m(18)
-        : k === 'secondary'
-          ? m(14)
-          : k === 'tertiary'
-            ? m(11)
-            : k === 'residential'
-              ? m(8)
-              : m(5.5)
-    const walkWidth = (k: string) => (k === 'pedestrian' ? m(7) : k === 'path' ? m(2.6) : m(3))
-    return {
-      road: build((e) => e.drive, roadWidth, [0.63, 0.64, 0.66]),
-      walk: build((e) => e.walk && !e.drive, walkWidth, [0.93, 0.91, 0.86]),
-    }
-  }, [])
-
+  const tex = useMemo(() => groundTexture(), [])
+  const w = FRAME.x1 - FRAME.x0
+  const h = FRAME.z1 - FRAME.z0
   return (
-    <>
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.02, 0]}>
-        <planeGeometry args={[200, 320]} />
-        <meshStandardMaterial color="#93cf7c" roughness={1} />
-      </mesh>
-      <mesh geometry={road} position={[0, 0.01, 0]}>
-        <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={walk} position={[0, 0.03, 0]}>
-        <meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} />
-      </mesh>
-    </>
+    <mesh rotation-x={-Math.PI / 2} position={[(FRAME.x0 + FRAME.x1) / 2, 0, (FRAME.z0 + FRAME.z1) / 2]}>
+      <planeGeometry args={[w, h]} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
+    </mesh>
   )
 }
 

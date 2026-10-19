@@ -45,7 +45,8 @@ for (const b of sim.buses)
 
 // each bus carries its own legal load, drawn from the real standing-room band
 const caps = sim.buses.map((b) => b.capacity)
-for (const c of caps) assert.ok(c >= CAPACITY_MIN && c <= CAPACITY_MAX, `capacity ${c} outside ${CAPACITY_MIN}-${CAPACITY_MAX}`)
+for (const c of caps)
+  assert.ok(c >= CAPACITY_MIN && c <= CAPACITY_MAX, `capacity ${c} outside ${CAPACITY_MIN}-${CAPACITY_MAX}`)
 assert.ok(new Set(caps).size > 3, 'the fleet is not one uniform vehicle')
 for (const b of sim.buses) assert.ok(b.riders.length <= b.capacity, `bus ${b.route.ref} over capacity`)
 
