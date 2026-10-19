@@ -1751,17 +1751,18 @@ const NODES: { name: string; key: StopKey }[] = [
 function Bus({
   route,
   track,
-  minute,
+  clock,
 }: {
   route: (typeof ROUTES)[number]
   track: { t: number; d: number; load: number }[]
-  minute: number
+  clock: { t: number }
 }) {
   const g = useRef<ThreeGroup>(null)
 
   useFrame(() => {
     const node = g.current
     if (!node || track.length < 2) return
+    const minute = clock.t
     const i = Math.min(track.length - 2, Math.max(0, Math.floor(minute) - track[0].t))
     const a = track[i]
     const b = track[i + 1]
@@ -1859,28 +1860,35 @@ function Person({ shirt, skin, scale = 0.5 }: { shirt: string; skin: string; sca
 /** every agent, one draw call, interpolated between the last two simulated minutes */
 function Crowd({
   agents,
+  buses,
   size,
-  minute,
+  clock,
   skip,
 }: {
   agents: SimAgent[]
+  buses: { px: number; pz: number; x: number; z: number }[]
   size: number
-  minute: number
+  clock: { t: number }
   skip: Set<number>
 }) {
   const ref = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const colour = useMemo(() => new THREE.Color(), [])
-  const f = minute - Math.floor(minute)
 
   useFrame(() => {
     const mesh = ref.current
     if (!mesh) return
+    const t = clock.t
+    const f = t - Math.floor(t)
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]
-      const shown = a.state !== 'ride' && !skip.has(a.id)
-      const x = a.px + (a.x - a.px) * f
-      const z = a.pz + (a.z - a.pz) * f
+      // riders are inside a bus, not nowhere: keep them on it so nobody pops out of existence
+      const bus = a.state === 'ride' ? buses[a.bus] : undefined
+      const shown = !skip.has(a.id)
+      const sx = bus ? bus.px + (bus.x - bus.px) * f : a.px + (a.x - a.px) * f
+      const sz = bus ? bus.pz + (bus.z - bus.pz) * f : a.pz + (a.z - a.pz) * f
+      const x = sx
+      const z = sz
       const s = shown ? size / 1.7 : 0.0001
       dummy.position.set(x, shown ? s * 0.85 : -80, z)
       dummy.scale.set(s, s, s)
@@ -2127,6 +2135,9 @@ function Scene({
   day,
   minute,
   nowF,
+  sim,
+  clock,
+  speed,
   onCamera,
 }: {
   world: World
@@ -2137,8 +2148,18 @@ function Scene({
   minute: number
   /** sim-relative fractional minutes — for smooth motion */
   nowF: number
+  sim: Sim
+  /** mutable sim clock, advanced once per frame so motion never waits on React */
+  clock: { t: number }
+  speed: number
   onCamera?: (camera: THREE.Camera) => void
 }) {
+  // advance the simulation off the frame clock, not off React renders
+  useFrame((_, dt) => {
+    clock.t += Math.min(0.25, dt) * speed
+    const target = Math.floor(clock.t)
+    if (target > sim.minute) sim.runTo(target)
+  }, -1)
   const { camera } = useThree()
   useEffect(() => {
     onCamera?.(camera)
@@ -2189,11 +2210,11 @@ function Scene({
       {run.buses.map((b, i) => {
         const route = ROUTES.find((r) => r.ref === b.ref)
         if (!route) return null
-        return <Bus key={`${b.ref}-${i}`} route={route} track={b.track} minute={nowF} />
+        return <Bus key={`${b.ref}-${i}`} route={route} track={b.track} clock={clock} />
       })}
 
       {/* near the camera you get people; further out, crowd tokens */}
-      <Crowd agents={agents} size={m(1.75)} minute={nowF} skip={nearIds} />
+      <Crowd agents={agents} buses={sim.buses} size={m(1.75)} clock={clock} skip={nearIds} />
       {near.map((a) => {
         const f = nowF - Math.floor(nowF)
         const x = a.px + (a.x - a.px) * f
@@ -2351,10 +2372,13 @@ export default function App() {
   // one live simulation, stepped forward to the clock. Never re-run from zero.
   const simKey = `${campusRev}|${date}|${cal}|${seed}|${reserves}|${JSON.stringify(world)}`
   const simRef = useRef<{ key: string; sim: Sim } | null>(null)
+  /** advanced per frame by the scene; the UI only samples it */
+  const clock = useRef({ t: 0 }).current
   if (!simRef.current || simRef.current.key !== simKey) {
     simRef.current = { key: simKey, sim: createSim(makeWorld(world, reserves), 0) }
+    clock.t = simMin
   }
-  simRef.current.sim.runTo(nowMin)
+  simRef.current.sim.runTo(Math.floor(simMin))
   const sim = simRef.current.sim
   const agents = sim.agents
   const run: SimRun = sim.snapshot()
@@ -2487,6 +2511,9 @@ export default function App() {
           day={day}
           minute={minute}
           nowF={simMin}
+          sim={sim}
+          clock={clock}
+          speed={speed}
           onCamera={(c) => ((window as unknown as { __cam: unknown }).__cam = c)}
         />
         <OrbitControls
